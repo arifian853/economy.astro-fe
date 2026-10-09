@@ -1,0 +1,307 @@
+---
+import Layout from "../layouts/Layout.astro";
+---
+
+<Layout title="Ringkasan event — Economy">
+  <main class="public-ledger-page">
+    <header class="public-ledger-nav">
+      <a href="/" class="public-ledger-brand" aria-label="Economy, kembali ke beranda">Economy</a>
+      <span class="public-nav-caption">Ringkasan event</span>
+    </header>
+
+    <section id="public-loading" class="public-state-card" role="status">
+      <span class="public-state-mark" aria-hidden="true">…</span>
+      <div>
+        <h1>Memuat ringkasan</h1>
+        <p>Menyiapkan informasi keuangan event.</p>
+      </div>
+    </section>
+
+    <section id="public-error" class="public-state-card public-error-card" role="alert" hidden>
+      <span class="public-state-mark" aria-hidden="true">!</span>
+      <div>
+        <h1>Ringkasan tidak tersedia</h1>
+        <p id="public-error-message">Tautan tidak valid atau sudah dinonaktifkan.</p>
+      </div>
+    </section>
+
+    <div id="public-content" hidden>
+      <section class="public-event-hero" aria-labelledby="public-event-name">
+        <div>
+          <p class="public-page-kicker">Ringkasan keuangan</p>
+          <h1 id="public-event-name"></h1>
+          <p class="public-event-date"><time id="public-event-date"></time></p>
+        </div>
+        <span class="public-hero-mark" aria-hidden="true">Rp</span>
+      </section>
+
+      <section class="public-overview" aria-label="Ringkasan anggaran">
+        <article class="public-total-remaining-card">
+          <span class="public-stat-label">Sisa anggaran</span>
+          <strong id="public-total-remaining" class="public-total-value">—</strong>
+          <span id="public-remaining-caption" class="public-stat-caption">Setelah seluruh pengeluaran</span>
+        </article>
+        <article class="public-stat-card">
+          <span class="public-stat-label">Anggaran total</span>
+          <strong id="public-total-budget" class="public-stat-value">—</strong>
+          <span class="public-stat-caption">Dana event</span>
+        </article>
+        <article class="public-stat-card">
+          <span class="public-stat-label">Total pengeluaran</span>
+          <strong id="public-total-expenses" class="public-stat-value">—</strong>
+          <span id="public-entry-count" class="public-stat-caption">0 transaksi</span>
+        </article>
+      </section>
+
+      <section class="public-channel-section" aria-labelledby="public-channel-title">
+        <div class="public-section-heading">
+          <div>
+            <p class="public-page-kicker">Sumber dana</p>
+            <h2 id="public-channel-title">Saldo per kanal</h2>
+          </div>
+          <span class="public-section-note">Kas dan digital</span>
+        </div>
+        <div class="public-channel-grid">
+          <article class="public-channel-card">
+            <div class="public-channel-heading"><span class="public-channel-dot cash-dot" aria-hidden="true"></span><h3>Tunai</h3></div>
+            <dl>
+              <div><dt>Anggaran kas</dt><dd id="public-cash-budget">—</dd></div>
+              <div><dt>Terpakai</dt><dd id="public-cash-expenses">—</dd></div>
+              <div class="public-channel-balance"><dt>Sisa kas</dt><dd id="public-cash-remaining">—</dd></div>
+            </dl>
+          </article>
+          <article class="public-channel-card">
+            <div class="public-channel-heading"><span class="public-channel-dot digital-dot" aria-hidden="true"></span><h3>Digital / QRIS</h3></div>
+            <dl>
+              <div><dt>Anggaran digital</dt><dd id="public-digital-budget">—</dd></div>
+              <div><dt>Terpakai</dt><dd id="public-digital-expenses">—</dd></div>
+              <div class="public-channel-balance"><dt>Sisa digital</dt><dd id="public-digital-remaining">—</dd></div>
+            </dl>
+          </article>
+        </div>
+        <p id="public-split-note" class="public-split-note" hidden></p>
+      </section>
+
+      <section id="public-ledger" class="public-ledger-section" aria-labelledby="public-ledger-title" hidden>
+        <div class="public-section-heading public-ledger-section-head">
+          <div>
+            <p class="public-page-kicker">Buku kas</p>
+            <h2 id="public-ledger-title">Rincian transaksi</h2>
+          </div>
+          <span id="public-entry-count-list" class="public-section-note"></span>
+        </div>
+        <ul id="public-entry-list" class="public-entry-list"></ul>
+        <div id="public-empty" class="public-empty-state" hidden>
+          <span class="public-empty-mark" aria-hidden="true">—</span>
+          <h3>Belum ada pengeluaran</h3>
+          <p>Transaksi event akan muncul di sini.</p>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <script>
+    import { parsePublicShareToken } from "../lib/public-share";
+    import { normalizePublicEvent } from "../lib/public-view";
+
+    const loading = document.getElementById("public-loading");
+    const error = document.getElementById("public-error");
+    const errorMessage = document.getElementById("public-error-message");
+    const content = document.getElementById("public-content");
+    const ledger = document.getElementById("public-ledger");
+    const eventName = document.getElementById("public-event-name");
+    const eventDate = document.getElementById("public-event-date") as HTMLTimeElement | null;
+    const entryList = document.getElementById("public-entry-list");
+    const entryCount = document.getElementById("public-entry-count");
+    const entryCountList = document.getElementById("public-entry-count-list");
+    const emptyState = document.getElementById("public-empty");
+    const splitNote = document.getElementById("public-split-note");
+    const apiBase = (import.meta.env.PUBLIC_API_URL || "/api").replace(/\/$/, "");
+    const formatMoney = (amount: number) => new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 }).format(amount);
+    const setMoney = (id: string, amount: number | null) => {
+      const element = document.getElementById(id);
+      if (element) element.textContent = amount === null ? "Belum dibagi" : formatMoney(amount);
+    };
+
+    const showFailure = (message: string) => {
+      if (loading) loading.hidden = true;
+      if (content) content.hidden = true;
+      if (errorMessage) errorMessage.textContent = message;
+      if (error) error.hidden = false;
+    };
+
+    const renderEntries = (entries: NonNullable<ReturnType<typeof normalizePublicEvent>>["entries"]) => {
+      if (!entryList || !entryCount || !entryCountList || !emptyState || !ledger) return;
+      entryList.replaceChildren();
+      ledger.hidden = false;
+      entryCount.textContent = `${entries.length} transaksi`;
+      entryCountList.textContent = `${entries.length} transaksi`;
+      emptyState.hidden = entries.length > 0;
+
+      for (const entry of entries) {
+        const row = document.createElement("li");
+        row.className = "public-entry-row";
+        const marker = document.createElement("span");
+        marker.className = "public-entry-marker";
+        marker.setAttribute("aria-hidden", "true");
+        marker.textContent = "−";
+        const detail = document.createElement("div");
+        detail.className = "public-entry-detail";
+        const kind = document.createElement("span");
+        kind.className = "public-entry-kind";
+        kind.textContent = entry.source === "cash" ? "Pengeluaran · Tunai" : "Pengeluaran · Digital";
+        const name = document.createElement("h3");
+        name.className = "public-entry-name";
+        name.textContent = entry.name;
+        const time = document.createElement("time");
+        time.className = "public-entry-time";
+        time.dateTime = entry.transactionAt;
+        const parsedTime = new Date(entry.transactionAt);
+        time.textContent = Number.isNaN(parsedTime.getTime())
+          ? "Waktu tidak tersedia"
+          : new Intl.DateTimeFormat("id-ID", { dateStyle: "medium", timeStyle: "short", timeZone: "Asia/Jakarta" }).format(parsedTime);
+        detail.append(kind, name, time);
+        const amount = document.createElement("strong");
+        amount.className = "public-entry-amount";
+        amount.textContent = `− ${formatMoney(entry.amount)}`;
+        row.append(marker, detail, amount);
+        entryList.append(row);
+      }
+    };
+
+    const renderBudget = (summary: NonNullable<ReturnType<typeof normalizePublicEvent>>["budgetSummary"], entryTotal: number) => {
+      setMoney("public-total-budget", summary.budget);
+      setMoney("public-total-expenses", summary.totalExpenses);
+      setMoney("public-total-remaining", summary.totalRemaining);
+      setMoney("public-cash-budget", summary.cashBudget);
+      setMoney("public-cash-expenses", summary.cashExpenses);
+      setMoney("public-cash-remaining", summary.cashRemaining);
+      setMoney("public-digital-budget", summary.digitalBudget);
+      setMoney("public-digital-expenses", summary.digitalExpenses);
+      setMoney("public-digital-remaining", summary.digitalRemaining);
+      if (entryCount) entryCount.textContent = `${entryTotal} transaksi`;
+      if (splitNote) {
+        splitNote.hidden = summary.cashBudget !== null;
+        splitNote.textContent = "Pembagian anggaran kas dan digital belum diatur.";
+      }
+      const caption = document.getElementById("public-remaining-caption");
+      if (caption) caption.textContent = summary.totalRemaining < 0 ? "Pengeluaran melebihi anggaran" : "Setelah seluruh pengeluaran";
+    };
+
+    const loadPublicEvent = async (token: string) => {
+      try {
+        const response = await fetch(`${apiBase}/public/events`, {
+          method: "GET",
+          headers: { "X-Economy-Share-Token": token },
+          credentials: "omit",
+          cache: "no-store",
+          redirect: "error",
+        });
+        if (!response.ok) {
+          showFailure(response.status === 404
+            ? "Tautan tidak valid atau sudah dinonaktifkan."
+            : "Ringkasan event sementara tidak dapat dimuat.");
+          return;
+        }
+        const view = normalizePublicEvent(await response.json());
+        if (!view) {
+          showFailure("Data ringkasan tidak lengkap atau tidak valid.");
+          return;
+        }
+        if (loading) loading.hidden = true;
+        if (error) error.hidden = true;
+        if (content) content.hidden = false;
+        if (eventName) eventName.textContent = view.event.name;
+        document.title = `${view.event.name} — Economy`;
+        if (eventDate) {
+          eventDate.dateTime = view.event.eventDate;
+          const parsedDate = new Date(`${view.event.eventDate}T00:00:00+07:00`);
+          eventDate.textContent = Number.isNaN(parsedDate.getTime())
+            ? view.event.eventDate
+            : new Intl.DateTimeFormat("id-ID", { dateStyle: "long", timeZone: "Asia/Jakarta" }).format(parsedDate);
+        }
+        renderBudget(view.budgetSummary, view.entries.length);
+        renderEntries(view.entries);
+      } catch {
+        showFailure("Ringkasan event sementara tidak dapat dimuat. Periksa koneksi lalu coba lagi.");
+      }
+    };
+
+    const token = parsePublicShareToken(window.location.hash);
+    if (!token) showFailure("Tautan tidak valid atau sudah dinonaktifkan.");
+    else void loadPublicEvent(token);
+  </script>
+
+  <style>
+    .public-ledger-page { width: min(100% - 32px, 1040px); margin: 0 auto; padding: 24px 0 56px; color: var(--text-main); }
+    .public-ledger-nav { display: flex; justify-content: space-between; align-items: center; margin-bottom: 26px; }
+    .public-ledger-brand { color: var(--primary); font-family: var(--font-heading); font-size: 1.25rem; font-weight: 700; text-decoration: none; }
+    .public-nav-caption, .public-section-note { color: var(--text-muted); font-size: .875rem; }
+    .public-state-card, .public-event-hero, .public-channel-section, .public-ledger-section { border: 1px solid var(--border-subtle); border-radius: var(--radius-md); background: var(--bg-surface); }
+    .public-state-card { display: flex; gap: 16px; align-items: flex-start; padding: 22px; margin: 0 auto; max-width: 650px; }
+    .public-state-card h1, .public-state-card p { margin: 0; }
+    .public-state-card h1 { margin-bottom: 5px; font-size: 1.05rem; }
+    .public-state-card p { color: var(--text-muted); }
+    .public-state-mark { width: 32px; height: 32px; border-radius: 50%; display: grid; place-items: center; background: var(--bg-surface-variant); color: var(--primary); font-weight: 700; }
+    .public-error-card .public-state-mark { color: var(--status-error-text); background: var(--status-error-bg); }
+    .public-event-hero { display: flex; justify-content: space-between; align-items: center; gap: 24px; padding: 28px 32px; margin-bottom: 16px; background: var(--bg-surface-variant); }
+    .public-page-kicker { margin: 0 0 8px; color: var(--primary); font-size: .76rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
+    .public-event-hero h1 { margin: 0; font: 700 clamp(1.6rem, 4vw, 2.35rem)/1.15 var(--font-heading); }
+    .public-event-date { margin: 8px 0 0; color: var(--text-muted); }
+    .public-hero-mark { display: grid; place-items: center; width: 58px; height: 58px; flex: 0 0 auto; border: 1px solid var(--border-subtle); border-radius: 50%; color: var(--primary); font: 600 1rem var(--font-mono); }
+    .public-overview { display: grid; grid-template-columns: 1.35fr 1fr 1fr; gap: 12px; margin-bottom: 16px; }
+    .public-total-remaining-card, .public-stat-card { display: flex; flex-direction: column; justify-content: center; min-height: 128px; padding: 20px 22px; border: 1px solid var(--border-subtle); border-radius: var(--radius-md); background: var(--bg-surface); }
+    .public-total-remaining-card { background: #d8e4d4; border-color: #a7b8a3; }
+    .public-stat-label { margin-bottom: 10px; color: var(--text-muted); font-size: .82rem; font-weight: 600; }
+    .public-total-remaining-card .public-stat-label, .public-total-remaining-card .public-stat-caption { color: #354d37; }
+    .public-total-value, .public-stat-value { font: 600 clamp(1.15rem, 2.4vw, 1.65rem)/1.2 var(--font-mono); overflow-wrap: anywhere; }
+    .public-total-value { color: #2e5034; font-size: clamp(1.4rem, 3vw, 2rem); }
+    .public-stat-caption { margin-top: 8px; color: var(--text-muted); font-size: .78rem; }
+    .public-channel-section { padding: 22px; margin-bottom: 16px; }
+    .public-section-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 16px; }
+    .public-section-heading .public-page-kicker { margin-bottom: 4px; }
+    .public-section-heading h2 { margin: 0; font: 600 1.12rem var(--font-heading); }
+    .public-channel-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+    .public-channel-card { padding: 18px; border: 1px solid var(--border-subtle); border-radius: var(--radius-md); background: var(--bg-surface-variant); }
+    .public-channel-heading { display: flex; align-items: center; gap: 9px; margin-bottom: 12px; }
+    .public-channel-heading h3 { margin: 0; font: 600 .98rem var(--font-heading); }
+    .public-channel-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--primary); }
+    .digital-dot { background: #708b72; }
+    .public-channel-card dl { display: grid; gap: 0; margin: 0; }
+    .public-channel-card dl > div { display: flex; justify-content: space-between; gap: 12px; padding: 10px 0; border-top: 1px solid var(--border-subtle); }
+    .public-channel-card dt { color: var(--text-muted); font-size: .86rem; }
+    .public-channel-card dd { margin: 0; text-align: right; font: 500 .88rem var(--font-mono); }
+    .public-channel-card .public-channel-balance dd { color: var(--primary); font-weight: 700; }
+    .public-split-note { margin: 13px 0 0; color: var(--text-muted); font-size: .82rem; }
+    .public-ledger-section { overflow: hidden; }
+    .public-ledger-section-head { padding: 22px 22px 14px; }
+    .public-entry-list { list-style: none; margin: 0; padding: 0 22px 10px; }
+    .public-entry-row { display: grid; grid-template-columns: 34px minmax(0, 1fr) auto; align-items: center; gap: 12px; padding: 16px 0; border-top: 1px solid var(--border-subtle); }
+    .public-entry-marker { width: 30px; height: 30px; display: grid; place-items: center; border: 1px solid var(--border-subtle); border-radius: 50%; color: var(--text-muted); }
+    .public-entry-detail { min-width: 0; }
+    .public-entry-kind { color: var(--text-muted); font-size: .72rem; }
+    .public-entry-name { margin: 3px 0; font-size: .96rem; overflow-wrap: anywhere; }
+    .public-entry-time { color: var(--text-muted); font-size: .76rem; }
+    .public-entry-amount { white-space: nowrap; font: 600 .9rem var(--font-mono); }
+    .public-empty-state { padding: 26px 20px 32px; text-align: center; }
+    .public-empty-mark { color: var(--primary); font: 600 1.5rem var(--font-mono); }
+    .public-empty-state h3 { margin: 8px 0 3px; font: 600 1rem var(--font-heading); }
+    .public-empty-state p { margin: 0; color: var(--text-muted); font-size: .86rem; }
+    [hidden] { display: none !important; }
+    @media (max-width: 650px) {
+      .public-ledger-page { width: min(100% - 24px, 1040px); padding-top: 16px; }
+      .public-ledger-nav { margin-bottom: 18px; }
+      .public-event-hero { padding: 22px; }
+      .public-hero-mark { display: none; }
+      .public-overview { grid-template-columns: 1fr 1fr; }
+      .public-total-remaining-card { grid-column: 1 / -1; min-height: 112px; }
+      .public-stat-card { min-height: 105px; padding: 16px; }
+      .public-channel-section { padding: 18px; }
+      .public-channel-grid { grid-template-columns: 1fr; }
+      .public-entry-list { padding-right: 16px; padding-left: 16px; }
+      .public-ledger-section-head { padding-right: 16px; padding-left: 16px; }
+      .public-entry-row { grid-template-columns: 30px minmax(0, 1fr); gap: 10px; }
+      .public-entry-amount { grid-column: 2; }
+    }
+  </style>
+</Layout>

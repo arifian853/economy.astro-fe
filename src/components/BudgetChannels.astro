@@ -1,0 +1,184 @@
+<section class="card budget-channels-card" aria-labelledby="budget-channels-title">
+  <div class="budget-channels-heading">
+    <div>
+      <h2 id="budget-channels-title">Pembagian dana</h2>
+      <p id="budget-channels-description" class="muted">Atur setelah event dibuat. Total alokasi selalu mengikuti anggaran event.</p>
+    </div>
+  </div>
+
+  <div id="budget-channel-grid" class="budget-channel-grid">
+    <article class="budget-channel-card">
+      <div class="budget-channel-title"><span class="budget-channel-dot is-cash"></span><h3>Uang tunai</h3></div>
+      <div class="budget-channel-line"><span>Dialokasikan</span><strong id="cash-channel-budget">—</strong></div>
+      <div class="budget-channel-line"><span>Terpakai</span><strong id="cash-channel-spent">—</strong></div>
+      <div class="budget-channel-line budget-channel-remaining"><span>Sisa tunai</span><strong id="cash-channel-remaining">—</strong></div>
+    </article>
+    <article class="budget-channel-card">
+      <div class="budget-channel-title"><span class="budget-channel-dot is-digital"></span><h3>Digital / QRIS</h3></div>
+      <div class="budget-channel-line"><span>Dialokasikan</span><strong id="digital-channel-budget">—</strong></div>
+      <div class="budget-channel-line"><span>Terpakai</span><strong id="digital-channel-spent">—</strong></div>
+      <div class="budget-channel-line budget-channel-remaining"><span>Sisa digital</span><strong id="digital-channel-remaining">—</strong></div>
+    </article>
+  </div>
+
+  <form id="budget-channel-form" class="budget-channel-form" novalidate>
+    <div class="budget-channel-input-wrap">
+      <label for="cash-budget-input" class="form-label">Anggaran yang dijadikan tunai</label>
+      <div class="money-input">
+        <span class="money-prefix" aria-hidden="true">Rp</span>
+        <input id="cash-budget-input" class="form-control money-control" type="text" inputmode="numeric" autocomplete="off" placeholder="Contoh: 500,000" aria-describedby="cash-budget-hint" />
+      </div>
+      <span id="cash-budget-hint" class="form-hint">Sisa dari total anggaran otomatis menjadi dana digital.</span>
+    </div>
+    <div class="budget-digital-preview">
+      <span class="form-label">Anggaran digital / QRIS</span>
+      <strong id="digital-budget-preview">Atur pembagian terlebih dahulu</strong>
+    </div>
+    <button type="submit" id="save-budget-channel" class="btn btn-outline">Simpan pembagian</button>
+  </form>
+  <p id="budget-channel-feedback" class="budget-channel-feedback muted" role="status" aria-live="polite">Belum dibagi. Pengeluaran tetap tercatat dari metode pembayarannya.</p>
+  <p id="budget-channel-error" class="budget-channel-error" role="alert" hidden></p>
+</section>
+
+<script>
+  import { fetchWithAuth } from "../lib/api";
+  import { formatCurrency } from "../lib/currency";
+  import { formatMoneyInput, formatMoneyInputState, parseMoneyInput } from "../lib/money-input";
+  import { calculateBudgetChannels } from "../lib/budget-channels";
+  import type { EventDetail } from "../types";
+
+  const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T | null;
+  const form = $("budget-channel-form") as HTMLFormElement | null;
+  const input = $("cash-budget-input") as HTMLInputElement | null;
+  const saveButton = $("save-budget-channel") as HTMLButtonElement | null;
+  const feedback = $("budget-channel-feedback");
+  const error = $("budget-channel-error");
+  const digitalPreview = $("digital-budget-preview");
+  let latestDetail: EventDetail | null = null;
+
+  const showError = (message: string) => {
+    if (!error) return;
+    error.textContent = message;
+    error.hidden = false;
+  };
+  const clearError = () => {
+    if (!error) return;
+    error.textContent = "";
+    error.hidden = true;
+  };
+
+  const render = (detail: EventDetail) => {
+    latestDetail = detail;
+    const { event, transactions = [] } = detail;
+    const summary = calculateBudgetChannels(event.budget, event.cashBudget, transactions);
+    if (form) form.hidden = event.status === "completed";
+    const description = $("budget-channels-description");
+    if (description && event.status === "completed") description.textContent = "Ringkasan penggunaan dana tunai dan digital.";
+    if (input && document.activeElement !== input) {
+      input.value = event.cashBudget === null ? "" : formatMoneyInput(event.cashBudget);
+    }
+    if (feedback) {
+      feedback.textContent = event.cashBudget === null
+        ? "Belum dibagi. Pengeluaran tetap tercatat dari metode pembayarannya."
+        : `Total teralokasi ${formatCurrency(event.budget)}: tunai ${formatCurrency(summary.cashBudget ?? 0)} dan digital ${formatCurrency(summary.digitalBudget ?? 0)}.`;
+    }
+    const setText = (id: string, value: string) => { const el = $(id); if (el) el.textContent = value; };
+    setText("cash-channel-budget", summary.cashBudget === null ? "Belum dibagi" : formatCurrency(summary.cashBudget));
+    setText("cash-channel-spent", formatCurrency(summary.cashExpenses));
+    setText("cash-channel-remaining", summary.cashRemaining === null ? "—" : formatCurrency(summary.cashRemaining));
+    setText("digital-channel-budget", summary.digitalBudget === null ? "Belum dibagi" : formatCurrency(summary.digitalBudget));
+    setText("digital-channel-spent", formatCurrency(summary.digitalExpenses));
+    setText("digital-channel-remaining", summary.digitalRemaining === null ? "—" : formatCurrency(summary.digitalRemaining));
+    updateDigitalPreview();
+  };
+
+  const updateDigitalPreview = () => {
+    if (!digitalPreview || !input || !latestDetail) return;
+    const cash = parseMoneyInput(input.value);
+    digitalPreview.textContent = cash === null
+      ? "Masukkan alokasi tunai"
+      : cash > latestDetail.event.budget
+        ? "Alokasi tunai melebihi total anggaran"
+        : formatCurrency(latestDetail.event.budget - cash);
+  };
+
+  input?.addEventListener("input", () => {
+    const { value, caret } = formatMoneyInputState(input.value, input.selectionStart ?? input.value.length);
+    input.value = value;
+    input.setSelectionRange(caret, caret);
+    updateDigitalPreview();
+    clearError();
+  });
+
+  form?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    if (!latestDetail || !input || !saveButton || latestDetail.event.status === "completed") return;
+    clearError();
+    const cashBudget = parseMoneyInput(input.value);
+    if (cashBudget === null || cashBudget < 0) {
+      showError("Isi nominal tunai dengan angka yang valid.");
+      input.focus();
+      return;
+    }
+    if (cashBudget > latestDetail.event.budget) {
+      showError("Alokasi tunai tidak boleh melebihi total anggaran.");
+      input.focus();
+      return;
+    }
+
+    saveButton.disabled = true;
+    saveButton.textContent = "Menyimpan…";
+    try {
+      const response = await fetchWithAuth(`/events/${encodeURIComponent(latestDetail.event.id)}`, {
+        method: "PATCH",
+        body: JSON.stringify({ cashBudget }),
+      });
+      if (!response.ok) throw new Error("Gagal menyimpan pembagian dana.");
+      const updatedEvent = await response.json() as EventDetail["event"];
+      latestDetail = { ...latestDetail, event: { ...latestDetail.event, ...updatedEvent } };
+      render(latestDetail);
+      if (feedback) feedback.textContent = "Pembagian dana tersimpan.";
+    } catch (err) {
+      showError(err instanceof Error ? err.message : "Gagal menyimpan pembagian dana.");
+    } finally {
+      saveButton.disabled = false;
+      saveButton.textContent = "Simpan pembagian";
+    }
+  });
+
+  window.addEventListener("update-budget-channels", (event: Event) => {
+    const detail = (event as CustomEvent<EventDetail>).detail;
+    if (detail) render(detail);
+  });
+</script>
+
+<style>
+  .budget-channels-card { display: flex; flex-direction: column; gap: 16px; }
+  .budget-channels-heading h2 { margin: 0 0 4px; font: 600 1.1rem var(--font-heading); }
+  .budget-channels-heading p { margin: 0; font-size: .85rem; }
+  .budget-channel-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+  .budget-channel-card { padding: 16px; border: 1px solid var(--border-subtle); border-radius: var(--radius-md); background: var(--bg-surface-variant); }
+  .budget-channel-title { display: flex; align-items: center; gap: 9px; margin-bottom: 12px; }
+  .budget-channel-title h3 { margin: 0; font: 600 .95rem var(--font-heading); }
+  .budget-channel-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--primary); }
+  .budget-channel-dot.is-digital { background: #708b72; }
+  .budget-channel-line { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; padding: 9px 0; border-top: 1px solid var(--border-subtle); color: var(--text-muted); font-size: .83rem; }
+  .budget-channel-line strong { color: var(--text-main); text-align: right; font: 500 .84rem var(--font-mono); }
+  .budget-channel-line.budget-channel-remaining { color: var(--text-main); font-weight: 600; }
+  .budget-channel-line.budget-channel-remaining strong { color: var(--primary); font-weight: 700; }
+  .budget-channel-form { display: grid; grid-template-columns: minmax(220px, 1.2fr) minmax(180px, 1fr) auto; align-items: end; gap: 14px; padding-top: 16px; border-top: 1px solid var(--border-subtle); }
+  .budget-channel-input-wrap, .budget-digital-preview { display: grid; gap: 7px; min-width: 0; }
+  .budget-digital-preview strong { min-height: 44px; display: flex; align-items: center; color: var(--text-main); font: 500 .95rem var(--font-mono); }
+  .budget-channel-feedback, .budget-channel-error { margin: 0; font-size: .82rem; }
+  .budget-channel-error { color: var(--status-error-text); }
+  @media (max-width: 760px) {
+    .budget-channel-form { grid-template-columns: 1fr 1fr; }
+    .budget-channel-form button { grid-column: 1 / -1; width: 100%; }
+  }
+  @media (max-width: 560px) {
+    .budget-channel-grid { grid-template-columns: 1fr; }
+    .budget-channel-form { grid-template-columns: 1fr; }
+    .budget-channel-form button { grid-column: auto; }
+  }
+  [hidden] { display: none !important; }
+</style>

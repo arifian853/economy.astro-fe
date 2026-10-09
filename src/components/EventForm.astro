@@ -1,0 +1,292 @@
+---
+// Komponen Form Modal untuk Tambah dan Edit Event
+---
+
+<dialog id="event-form-dialog" class="modal-dialog" aria-labelledby="event-form-title">
+  <div class="card event-form-card">
+    <div class="modal-header">
+      <h3 id="event-form-title">Buat Event Baru</h3>
+      <button type="button" id="btn-close-modal" class="btn btn-ghost btn-sm close-btn" aria-label="Tutup"><svg class="ui-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button>
+    </div>
+
+    <form id="event-form" class="modal-form" novalidate>
+      <input type="hidden" id="event-form-id" value="" />
+
+      <div class="form-group">
+        <label for="event-input-name" class="form-label">Nama Event *</label>
+        <input
+          type="text"
+          id="event-input-name"
+          autofocus
+          class="form-control"
+          placeholder="Contoh: Camping Bintan"
+          required
+          maxlength="200"
+        />
+      </div>
+
+      <div class="form-row-2">
+        <div class="form-group">
+          <label for="event-input-date" class="form-label">Tanggal Event *</label>
+          <input
+            type="date"
+            id="event-input-date"
+            class="form-control"
+            required
+          />
+        </div>
+
+        <div class="form-group">
+          <label for="event-input-status" class="form-label">Status *</label>
+          <select id="event-input-status" class="form-control">
+            <option value="upcoming">Akan datang</option>
+            <option value="active">Berlangsung</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label for="event-input-budget" class="form-label">Total anggaran (Rp) *</label>
+        <div class="money-input">
+          <span class="money-prefix" aria-hidden="true">Rp</span>
+          <input
+            type="text"
+            id="event-input-budget"
+            class="form-control money-control"
+            placeholder="2,000,000…"
+            required
+            inputmode="numeric"
+            pattern="[0-9,]+"
+            maxlength="21"
+            autocomplete="off"
+            aria-describedby="budget-hint"
+          />
+        </div>
+        <span id="budget-hint" class="form-hint">Koma akan memisahkan ribuan otomatis.</span>
+      </div>
+
+      <div class="form-group">
+        <label for="event-input-participants" class="form-label">Daftar Peserta *</label>
+        <textarea
+          id="event-input-participants"
+          class="form-control"
+          rows="3"
+          placeholder="Contoh: Arifian, Budi, Raka"
+          aria-describedby="participants-hint"
+          required
+        ></textarea>
+        <span id="participants-hint" class="form-hint">Pisahkan tiap nama dengan koma atau baris baru. Minimal 1 peserta.</span>
+      </div>
+
+      <div class="form-group">
+        <label for="event-input-notes" class="form-label">Catatan (Opsional)</label>
+        <textarea
+          id="event-input-notes"
+          class="form-control"
+          rows="2"
+          placeholder="Catatan tambahan rundown, lokasi, dll."
+          maxlength="2000"
+        ></textarea>
+      </div>
+
+      <!-- Pesan Feedback Error -->
+      <div id="event-form-error" class="error-box" role="alert" hidden></div>
+
+      <!-- Action Buttons -->
+      <div class="modal-actions">
+        <button type="submit" id="btn-submit-event" class="btn btn-primary">Simpan Event</button>
+      </div>
+    </form>
+  </div>
+</dialog>
+
+<script>
+  import { fetchWithAuth } from "../lib/api";
+  import type { EventItem, EventDetail } from "../types";
+  import { formatLocalDateInput } from "../lib/date";
+  import { formatMoneyInput, formatMoneyInputState, parseMoneyInput } from "../lib/money-input";
+
+  import { canCloseEventModal } from "../lib/event-modal";
+
+  const dialog = document.getElementById("event-form-dialog") as HTMLDialogElement;
+  const form = document.getElementById("event-form") as HTMLFormElement;
+  const titleEl = document.getElementById("event-form-title") as HTMLElement;
+  const idInput = document.getElementById("event-form-id") as HTMLInputElement;
+  const nameInput = document.getElementById("event-input-name") as HTMLInputElement;
+  const dateInput = document.getElementById("event-input-date") as HTMLInputElement;
+  const statusInput = document.getElementById("event-input-status") as HTMLSelectElement;
+  const budgetInput = document.getElementById("event-input-budget") as HTMLInputElement;
+  const participantsInput = document.getElementById("event-input-participants") as HTMLTextAreaElement;
+  const notesInput = document.getElementById("event-input-notes") as HTMLTextAreaElement;
+  const errorBox = document.getElementById("event-form-error") as HTMLDivElement;
+  const submitBtn = document.getElementById("btn-submit-event") as HTMLButtonElement;
+
+  const formatMoneyField = (input: HTMLInputElement) => {
+    const { value, caret } = formatMoneyInputState(
+      input.value,
+      input.selectionStart ?? input.value.length,
+    );
+    input.value = value;
+    input.setSelectionRange(caret, caret);
+  };
+
+  budgetInput.addEventListener("input", () => formatMoneyField(budgetInput));
+
+  const showError = (msg: string) => {
+    errorBox.textContent = msg;
+    errorBox.hidden = false;
+  };
+
+  const hideError = () => {
+    errorBox.textContent = "";
+    errorBox.hidden = true;
+  };
+
+  const resetForm = () => {
+    form.reset();
+    idInput.value = "";
+    hideError();
+  };
+
+  const closeModal = (trigger: "close-button" | "form-submit") => {
+    if (trigger === "close-button" && canCloseEventModal(trigger)) {
+      dialog.close();
+      resetForm();
+    } else if (trigger === "form-submit") {
+      dialog.close();
+      resetForm();
+    }
+  };
+
+  document.getElementById("btn-close-modal")?.addEventListener("click", () => closeModal("close-button"));
+  dialog.addEventListener("cancel", (event) => event.preventDefault());
+
+
+  // Handler Event Buka Form (Mode Create atau Edit)
+  window.addEventListener("open-event-form", async (e: Event) => {
+    const custom = e as CustomEvent<{ mode: "create" | "edit"; event?: EventItem }>;
+    const detail = custom.detail;
+    hideError();
+    form.reset();
+
+    if (detail.mode === "create") {
+      titleEl.textContent = "Buat Event Baru";
+      idInput.value = "";
+      // Set default tanggal hari ini
+      dateInput.value = formatLocalDateInput(new Date());
+      statusInput.value = "upcoming";
+      submitBtn.textContent = "Buat Event";
+      dialog.showModal();
+    } else if (detail.mode === "edit" && detail.event) {
+      const ev = detail.event;
+      titleEl.textContent = "Ubah event";
+      idInput.value = ev.id;
+      nameInput.value = ev.name;
+      dateInput.value = ev.eventDate;
+      statusInput.value = ev.status;
+      budgetInput.value = formatMoneyInput(ev.budget);
+      notesInput.value = ev.notes || "";
+      submitBtn.textContent = "Simpan Perubahan";
+      participantsInput.value = "Memuat peserta…";
+      dialog.showModal();
+
+      // Fetch detail event untuk mendapatkan daftar nama peserta
+      try {
+        const res = await fetchWithAuth(`/events/${ev.id}`);
+        if (res.ok) {
+          const data: EventDetail = await res.json();
+          const names = data.participants.map((p) => p.name).join("\n");
+          participantsInput.value = names;
+        } else {
+          participantsInput.value = "";
+        }
+      } catch {
+        participantsInput.value = "";
+      }
+    }
+  });
+
+  // Submit Handler dengan validasi client-side
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    hideError();
+
+    const name = nameInput.value.trim();
+    const eventDate = dateInput.value;
+    const budget = parseMoneyInput(budgetInput.value);
+    const status = statusInput.value as "upcoming" | "active";
+    const notes = notesInput.value.trim() || null;
+    const isEdit = !!idInput.value;
+
+    // Parsing peserta
+    const rawParticipants = participantsInput.value
+      .split(/[\n,]+/)
+      .map((p) => p.trim())
+      .filter((p) => p.length > 0);
+
+    // Client Validation
+    if (!name) {
+      showError("Nama event tidak boleh kosong.");
+      nameInput.focus();
+      return;
+    }
+
+    if (!eventDate) {
+      showError("Tanggal event harus diisi.");
+      dateInput.focus();
+      return;
+    }
+
+    if (budget === null || budget <= 0) {
+      showError("Anggaran harus berupa nominal rupiah lebih dari 0.");
+      budgetInput.focus();
+      return;
+    }
+
+    if (rawParticipants.length === 0) {
+      showError("Peserta event minimal 1 orang.");
+      participantsInput.focus();
+      return;
+    }
+
+    form.setAttribute("aria-busy", "true");
+    submitBtn.disabled = true;
+    submitBtn.textContent = isEdit ? "Menyimpan…" : "Membuat…";
+
+    try {
+      const payload = {
+        name,
+        eventDate,
+        budget,
+        status,
+        notes,
+        participants: rawParticipants,
+      };
+
+      const url = isEdit ? `/events/${idInput.value}` : "/events";
+      const method = isEdit ? "PATCH" : "POST";
+
+      const res = await fetchWithAuth(url, {
+        method,
+        body: JSON.stringify(payload),
+      });
+
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.error || `Gagal menyimpan event (status ${res.status})`);
+      }
+
+      // Berhasil
+      closeModal("form-submit");
+      // Memicu refresh daftar event di index.astro
+      window.dispatchEvent(new CustomEvent("refresh-events"));
+    } catch (err: any) {
+      showError(err.message || "Terjadi kesalahan saat menyimpan event.");
+    } finally {
+      form.removeAttribute("aria-busy");
+      submitBtn.disabled = false;
+      submitBtn.textContent = isEdit ? "Simpan Perubahan" : "Buat Event";
+    }
+  });
+</script>
+

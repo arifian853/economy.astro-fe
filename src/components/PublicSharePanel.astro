@@ -1,0 +1,209 @@
+<section class="card public-share-panel" id="public-share-card" aria-labelledby="public-share-heading">
+  <div class="public-share-topline">
+    <div class="public-share-heading">
+      <span class="public-share-mark" aria-hidden="true">
+        <svg class="ui-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M10 13a5 5 0 0 0 7.1 0l3-3A5 5 0 0 0 13 2.9l-1.7 1.7" />
+          <path d="M14 11a5 5 0 0 0-7.1 0l-3 3A5 5 0 0 0 11 21.1l1.7-1.7" />
+        </svg>
+      </span>
+      <div>
+        <h2 id="public-share-heading">Tautan publik</h2>
+        <p>Bagikan catatan pengeluaran event tanpa membuka data lainnya.</p>
+      </div>
+    </div>
+    <span id="public-share-state" class="public-share-state">Privat</span>
+  </div>
+
+  <div class="public-share-scope">
+    <strong>Yang terlihat di tautan</strong>
+    <p>Nama item, nominal total, dan waktu transaksi.</p>
+    <small>Peserta, anggaran, catatan internal, metode pembayaran, serta settlement tetap privat. Aplikasi saat ini hanya mencatat pengeluaran.</small>
+  </div>
+
+  <div class="public-share-controls">
+    <label class="sr-only" for="public-share-url">Tautan untuk dibagikan</label>
+    <input id="public-share-url" class="form-control public-share-url" type="url" readonly hidden />
+    <div class="public-share-actions">
+      <button id="btn-enable-public-share" type="button" class="btn btn-primary">Aktifkan tautan publik</button>
+      <button id="btn-copy-public-share" type="button" class="btn btn-outline" hidden>Salin tautan</button>
+      <button id="btn-disable-public-share" type="button" class="btn btn-ghost" hidden>Nonaktifkan</button>
+    </div>
+    <p id="public-share-feedback" class="public-share-feedback" role="status" aria-live="polite">Tautan belum dibuat; event ini hanya terlihat oleh akunmu.</p>
+    <p id="public-share-error" class="public-share-error" role="alert" hidden></p>
+  </div>
+</section>
+
+<script>
+  import { fetchWithAuth } from "../lib/api";
+  import { buildPublicShareUrl, isValidPublicShareToken } from "../lib/public-share";
+  import { writeThenRead } from "../lib/share-mutation";
+  import { confirmDialog } from "../lib/dialog";
+
+  const panel = document.getElementById("public-share-card");
+  const state = document.getElementById("public-share-state");
+  const urlInput = document.getElementById("public-share-url") as HTMLInputElement | null;
+  const enableButton = document.getElementById("btn-enable-public-share") as HTMLButtonElement | null;
+  const copyButton = document.getElementById("btn-copy-public-share") as HTMLButtonElement | null;
+  const disableButton = document.getElementById("btn-disable-public-share") as HTMLButtonElement | null;
+  const feedback = document.getElementById("public-share-feedback");
+  const errorMessage = document.getElementById("public-share-error");
+  const segments = window.location.pathname.split("/").filter(Boolean);
+  const eventId = segments[1] && segments[1] !== "index"
+    ? segments[1]
+    : new URL(window.location.href).searchParams.get("id");
+  const endpoint = eventId ? `/events/${encodeURIComponent(eventId)}/public-link` : null;
+
+  const showError = (message: string) => {
+    if (errorMessage) {
+      errorMessage.textContent = message;
+      errorMessage.hidden = false;
+    }
+  };
+
+  const clearError = () => {
+    if (errorMessage) {
+      errorMessage.textContent = "";
+      errorMessage.hidden = true;
+    }
+  };
+
+  const setPrivate = (message = "Tautan belum dibuat; event ini hanya terlihat oleh akunmu.") => {
+    if (state) {
+      state.textContent = "Privat";
+      state.className = "public-share-state";
+    }
+    if (urlInput) {
+      urlInput.value = "";
+      urlInput.hidden = true;
+    }
+    if (enableButton) enableButton.hidden = false;
+    if (copyButton) copyButton.hidden = true;
+    if (disableButton) disableButton.hidden = true;
+    if (feedback) {
+      feedback.textContent = message;
+      feedback.hidden = false;
+    }
+  };
+
+  const setPublic = (token: string) => {
+    const url = buildPublicShareUrl(window.location.origin, token);
+    if (!url || !urlInput) {
+      showError("Tautan publik tidak valid. Coba buat ulang tautan.");
+      return;
+    }
+    urlInput.value = url;
+    urlInput.hidden = false;
+    if (state) {
+      state.textContent = "Link aktif";
+      state.className = "public-share-state is-public";
+    }
+    if (enableButton) enableButton.hidden = true;
+    if (copyButton) copyButton.hidden = false;
+    if (disableButton) disableButton.hidden = false;
+    if (feedback) {
+      feedback.textContent = "Siapa pun yang memiliki tautan ini dapat melihat catatan yang tercantum di atas.";
+      feedback.hidden = false;
+    }
+  };
+
+  const setBusy = (busy: boolean) => {
+    if (enableButton) enableButton.disabled = busy;
+    if (copyButton) copyButton.disabled = busy;
+    if (disableButton) disableButton.disabled = busy;
+  };
+
+  const requestShareState = async (): Promise<boolean | null> => {
+    if (!endpoint) {
+      showError("Event tidak ditemukan.");
+      return null;
+    }
+    try {
+      const response = await fetchWithAuth(endpoint);
+      if (!response.ok) throw new Error("share state unavailable");
+      const data = await response.json() as { enabled?: boolean; token?: string | null };
+      clearError();
+      if (data.enabled && typeof data.token === "string" && isValidPublicShareToken(data.token)) {
+        setPublic(data.token);
+        return true;
+      }
+      setPrivate();
+      return false;
+    } catch {
+      showError("Status tautan publik tidak dapat dimuat. Coba muat ulang halaman.");
+      return null;
+    }
+  };
+
+  enableButton?.addEventListener("click", async () => {
+    if (!endpoint) return;
+    clearError();
+    setBusy(true);
+    if (feedback) feedback.textContent = "Membuat tautan publik…";
+    try {
+      const result = await writeThenRead(
+        async () => {
+          const response = await fetchWithAuth(endpoint, { method: "POST" });
+          if (!response.ok) throw new Error("share create failed");
+        },
+        requestShareState,
+      );
+      if (result.state === true && feedback) {
+        feedback.textContent = "Tautan aktif; statusnya sudah dikonfirmasi ulang.";
+      } else if (result.state === false) {
+        showError("Tautan belum aktif. Event tetap privat; coba lagi.");
+      } else {
+        showError("Status tautan belum dapat dipastikan. Muat ulang halaman sebelum membagikan.");
+      }
+    } finally {
+      setBusy(false);
+    }
+  });
+
+  copyButton?.addEventListener("click", async () => {
+    if (!urlInput?.value) return;
+    try {
+      await navigator.clipboard.writeText(urlInput.value);
+      if (feedback) feedback.textContent = "Tautan disalin. Bagikan hanya kepada orang yang kamu inginkan.";
+    } catch {
+      urlInput.focus();
+      urlInput.select();
+      const copied = document.execCommand("copy");
+      if (feedback) feedback.textContent = copied
+        ? "Tautan disalin."
+        : "Tautan dipilih; salin secara manual.";
+    }
+  });
+
+  disableButton?.addEventListener("click", async () => {
+    if (!endpoint || !(await confirmDialog({
+      title: "Nonaktifkan tautan publik?",
+      message: "Orang yang sudah menerima tautan ini tidak akan bisa melihat event lagi.",
+      confirmLabel: "Nonaktifkan tautan",
+      cancelLabel: "Batal",
+      destructive: true,
+    }))) return;
+    clearError();
+    setBusy(true);
+    try {
+      const result = await writeThenRead(
+        async () => {
+          const response = await fetchWithAuth(endpoint, { method: "DELETE" });
+          if (!response.ok) throw new Error("share revoke failed");
+        },
+        requestShareState,
+      );
+      if (result.state === false) {
+        setPrivate("Tautan dinonaktifkan; event kembali privat.");
+      } else if (result.state === true) {
+        showError("Tautan masih aktif. Coba nonaktifkan lagi sebelum membagikan perubahan.");
+      } else {
+        showError("Status tautan belum dapat dipastikan. Muat ulang halaman sebelum membagikan.");
+      }
+    } finally {
+      setBusy(false);
+    }
+  });
+
+  if (panel) void requestShareState();
+</script>

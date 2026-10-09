@@ -1,0 +1,25 @@
+---
+import Layout from "../../layouts/Layout.astro";
+import EventForm from "../../components/EventForm.astro";
+import TransactionForm from "../../components/TransactionForm.astro";
+---
+
+<Layout title="Local form QA">
+  <main class="container main-content">
+    <h1>Local form QA</h1>
+    <button id="qa-open-event" class="btn btn-primary" type="button">Open event form</button>
+    <button id="qa-open-tx" class="btn btn-primary" type="button">Open transaction form</button>
+    <EventForm />
+    <TransactionForm />
+  </main>
+  <script>
+    document.getElementById("qa-open-event")?.addEventListener("click", () => {
+      window.dispatchEvent(new CustomEvent("open-event-form", { detail: { mode: "create" } }));
+    });
+    document.getElementById("qa-open-tx")?.addEventListener("click", () => {
+      window.dispatchEvent(new CustomEvent("open-tx-form", {
+        detail: { mode: "add", eventId: "00000000-0000-4000-8000-000000000001" },
+      }));
+    });
+  </script>
+</Layout>

@@ -1,0 +1,58 @@
+---
+import Layout from "../../layouts/Layout.astro";
+---
+
+<Layout title="Masuk… — Economy">
+  <main class="wrap">
+    <section class="card" aria-labelledby="callback-title">
+      <h1 id="callback-title" class="state-brand">Economy</h1>
+      <p id="msg" class="muted" role="status">Menyelesaikan proses masuk…</p>
+      <p id="err" class="error-box" role="alert" hidden></p>
+      <a id="back" href="/" class="btn btn-outline" hidden>Kembali</a>
+    </section>
+  </main>
+</Layout>
+
+<script>
+  import { supabase } from "../../lib/supabase";
+
+  const fail = (message: string) => {
+    document.getElementById("msg")!.hidden = true;
+    const err = document.getElementById("err")!;
+    err.textContent = message;
+    err.hidden = false;
+    document.getElementById("back")!.hidden = false;
+  };
+
+  const params = new URL(location.href).searchParams;
+  const providerError = params.get("error_description") ?? params.get("error");
+  const code = params.get("code");
+
+  if (providerError) {
+    fail(providerError);
+  } else if (!code) {
+    fail("Kode masuk tidak ditemukan.");
+  } else {
+    const { error } = await supabase.auth.exchangeCodeForSession(code);
+    if (error) fail(error.message);
+    else location.replace("/");
+  }
+</script>
+
+<style>
+  .wrap {
+    min-height: 100svh;
+    display: grid;
+    place-items: center;
+    padding: 24px;
+  }
+  .card {
+    width: 100%;
+    max-width: 440px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 16px;
+    text-align: center;
+  }
+</style>

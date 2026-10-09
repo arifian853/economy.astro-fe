@@ -1,0 +1,642 @@
+---
+export function getStaticPaths() {
+  return [{ params: { id: "index" } }];
+}
+
+import Layout from "../../layouts/Layout.astro";
+import TransactionForm from "../../components/TransactionForm.astro";
+import SettlementSummary from "../../components/SettlementSummary.astro";
+import PublicSharePanel from "../../components/PublicSharePanel.astro";
+import BudgetChannels from "../../components/BudgetChannels.astro";
+---
+
+<Layout title="Dashboard Event — Economy">
+  <!-- Topbar Navigation -->
+  <header class="topbar">
+    <div class="container topbar-inner">
+      <a href="/" class="brand-link">
+        <span class="brand-title">Economy</span>
+      </a>
+      <div class="user-menu">
+        <span id="user-email" class="user-email muted"></span>
+        <button type="button" id="btn-logout" class="btn btn-outline btn-sm">Keluar</button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Content Container -->
+  <main class="container main-content">
+    <!-- Breadcrumb Nav -->
+    <div class="nav-back-wrap">
+      <a href="/" class="btn btn-ghost btn-sm">
+        <svg class="ui-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m10 6-6 6 6 6M4 12h16"/></svg> Daftar event
+      </a>
+    </div>
+
+    <!-- State: Loading Dashboard -->
+    <div id="dashboard-loading" class="card center py-12" role="status">
+      <p class="muted">Memuat data event…</p>
+    </div>
+
+    <!-- State: Error / Not Found -->
+    <div id="dashboard-error" class="card center py-12 empty-card" hidden>
+      <div class="empty-icon-wrap">
+        <svg class="ui-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7h.01"/></svg>
+      </div>
+      <h3 id="dashboard-error-title">Gagal Memuat Event</h3>
+      <p id="dashboard-error-msg" class="muted" role="alert">Event tidak ditemukan atau terjadi kesalahan.</p>
+      <a href="/" class="btn btn-primary btn-sm">Kembali ke Beranda</a>
+    </div>
+
+    <!-- State: Dashboard Content -->
+    <div id="dashboard-content" class="dashboard-stack" hidden>
+      <!-- Header Event Card -->
+      <section class="card event-header-card">
+        <div class="event-header-row">
+          <div class="event-title-meta">
+            <div class="event-title-line">
+              <h1 id="event-name" class="event-heading"></h1>
+              <span id="event-status" class="badge"></span>
+            </div>
+            <p id="event-date" class="event-date-text muted"></p>
+          </div>
+          <div class="event-header-actions">
+            <button type="button" id="btn-complete-event" class="btn btn-outline btn-sm">
+              Selesaikan event
+            </button>
+          </div>
+        </div>
+
+        <div id="event-archive-notice" class="event-archive-notice" role="status" hidden>
+          <span class="event-archive-mark">ARSIP</span>
+          <div>
+            <strong>Event ini sudah diarsipkan</strong>
+            <p>Diselesaikan <time id="event-completed-at"></time>. Anggaran, peserta, dan transaksi tersimpan sebagai laporan akhir.</p>
+          </div>
+        </div>
+
+        <!-- Optional Notes -->
+        <p id="event-notes" class="event-notes muted" hidden></p>
+
+        <!-- Participants List -->
+        <div class="participants-block">
+          <div class="participants-header">
+            <span class="participants-label muted">Peserta Event:</span>
+            <span id="participants-count-text" class="participants-count-badge muted"></span>
+          </div>
+          <div id="participants-container" class="participants-pills"></div>
+        </div>
+      </section>
+
+      <PublicSharePanel />
+
+      <!-- Summary Cards Grid (Checkpoint M10.1, M10.2, M10.3) -->
+      <section class="summary-section">
+        <div class="summary-grid">
+          <div id="stat-card-remaining" class="card stat-card stat-card-remaining">
+            <span id="remaining-label" class="stat-label">Sisa Anggaran</span>
+            <span id="summary-remaining" class="stat-value">Rp0</span>
+            <span id="remaining-status-tag" class="stat-sub">Dalam batas anggaran</span>
+          </div>
+
+          <div class="card stat-card">
+            <span class="stat-label">Total Pengeluaran</span>
+            <span id="summary-expenses" class="stat-value">Rp0</span>
+            <span id="summary-expenses-sub" class="stat-sub muted">0 transaksi</span>
+          </div>
+
+          <div class="card stat-card">
+            <span class="stat-label">Anggaran</span>
+            <span id="summary-budget" class="stat-value">Rp0</span>
+            <span class="stat-sub muted">Batas pengeluaran</span>
+          </div>
+
+          <div class="card stat-card">
+            <span class="stat-label">Total Peserta</span>
+            <span id="summary-participants" class="stat-value">0</span>
+            <span class="stat-sub muted">Orang terdaftar</span>
+          </div>
+        </div>
+      </section>
+
+      <BudgetChannels />
+
+      <!-- Transactions Section -->
+      <section class="transactions-section">
+        <div class="section-header">
+          <div>
+            <h2>Daftar Transaksi</h2>
+            <p id="transactions-description" class="muted subtitle">Pencatatan pengeluaran riil selama kegiatan</p>
+          </div>
+          <div class="transactions-actions">
+            <!-- Tombol Tambah Transaksi (Checkpoint M11.1, M11.3) -->
+            <button
+              type="button"
+              id="btn-add-transaction"
+              class="btn btn-primary btn-sm"
+            >
+              <svg class="ui-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg> Tambah transaksi
+            </button>
+          </div>
+        </div>
+
+        <!-- Empty Transactions State -->
+        <div id="transactions-empty" class="card center py-12 empty-card" hidden>
+          <div class="empty-icon-wrap">
+            <svg class="ui-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3h12v18l-3-2-3 2-3-2-3 2V3Z"/><path d="M9 7h6M9 11h6M9 15h3"/></svg>
+          </div>
+          <h3>Belum ada transaksi.</h3>
+          <p id="transactions-empty-help" class="muted">Catat pengeluaran kegiatan untuk memantau sisa anggaran secara real-time.</p>
+        </div>
+
+        <!-- Transactions Table Container -->
+        <div id="transactions-table-wrap" class="card table-card" hidden>
+          <div class="table-responsive">
+            <table class="data-table" role="table" aria-label="Daftar transaksi">
+              <thead role="rowgroup">
+                <tr role="row">
+                  <th scope="col" role="columnheader">Item / Keperluan</th>
+                  <th scope="col" role="columnheader" class="text-right">Jumlah</th>
+                  <th scope="col" role="columnheader" class="text-right">Harga Satuan</th>
+                  <th scope="col" role="columnheader" class="text-right">Total</th>
+                  <th scope="col" role="columnheader">Metode</th>
+                  <th scope="col" role="columnheader">Waktu / Catatan</th>
+                  <th id="transaction-actions-header" scope="col" role="columnheader" class="text-right">Aksi</th>
+                </tr>
+              </thead>
+              <tbody id="transactions-tbody" role="rowgroup"></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- Pembagian sisa menjadi langkah penutup, hanya setelah event selesai. -->
+      <SettlementSummary />
+    </div>
+  </main>
+
+  <dialog id="complete-event-dialog" class="completion-dialog" aria-labelledby="complete-event-title">
+    <div class="completion-dialog-content">
+      <span class="event-archive-mark">ARSIP PERMANEN</span>
+      <h2 id="complete-event-title">Selesaikan event ini?</h2>
+      <p>Event ini akan menjadi arsip permanen dan tidak dapat diedit atau dihapus. Anggaran, peserta, dan transaksi akan tetap tersimpan sebagai laporan akhir.</p>
+      <p class="muted">Tautan publik tetap aktif; kamu masih bisa menonaktifkannya dari panel tautan publik.</p>
+      <p id="complete-event-error" class="error-box" role="alert" hidden></p>
+      <div class="completion-dialog-actions">
+        <button type="button" id="cancel-event-completion" class="btn btn-outline">Kembali</button>
+        <button type="button" id="confirm-event-completion" class="btn btn-primary">Selesaikan &amp; arsipkan</button>
+      </div>
+    </div>
+  </dialog>
+
+  <script>
+    import { supabase } from "../../lib/supabase";
+    import { fetchWithAuth } from "../../lib/api";
+    import { formatCurrency, formatDate, formatDateTime, formatPaymentMethod } from "../../lib/currency";
+    import { getEventLifecycleView } from "../../lib/event-lifecycle";
+    import { alertDialog, confirmDialog } from "../../lib/dialog";
+    import type { EventDetail } from "../../types";
+
+    const $ = <T extends HTMLElement = HTMLElement>(id: string): T | null =>
+      document.getElementById(id) as T | null;
+
+    // Helper untuk mengekstrak Event ID dari URL
+    const getEventIdFromUrl = (): string | null => {
+      const url = new URL(window.location.href);
+      const segments = url.pathname.split("/").filter(Boolean);
+      // /event/:id -> segments[0] = "event", segments[1] = ":id"
+      const pathId = segments[1];
+      if (pathId && pathId !== "index") {
+        return pathId;
+      }
+      return url.searchParams.get("id");
+    };
+
+    // Toggle tampilan dashboard
+    const showState = (state: "loading" | "error" | "content") => {
+      const sLoad = $("dashboard-loading");
+      const sErr = $("dashboard-error");
+      const sContent = $("dashboard-content");
+      if (sLoad) sLoad.hidden = state !== "loading";
+      if (sErr) sErr.hidden = state !== "error";
+      if (sContent) sContent.hidden = state !== "content";
+    };
+
+    // Render Event Detail, Summary, dan Transaksi
+    const renderDashboard = (detail: EventDetail) => {
+      const { event, participants = [], transactions = [] } = detail;
+      const lifecycle = getEventLifecycleView(event.status);
+
+      // 1. Header Event
+      const nameEl = $("event-name");
+      if (nameEl) nameEl.textContent = event.name;
+
+      const dateEl = $("event-date");
+      if (dateEl) dateEl.textContent = formatDate(event.eventDate);
+
+      const statusEl = $("event-status");
+      if (statusEl) {
+        statusEl.textContent = { upcoming: "Akan datang", active: "Berlangsung", completed: "Selesai" }[event.status];
+        statusEl.className = `badge badge-${event.status}`;
+      }
+
+      const completeButton = $("btn-complete-event");
+      if (completeButton) completeButton.hidden = !lifecycle.canComplete;
+      const archiveNotice = $("event-archive-notice");
+      if (archiveNotice) archiveNotice.hidden = !lifecycle.isArchived;
+      const completedAt = $("event-completed-at");
+      if (completedAt) completedAt.textContent = event.completedAt ? formatDateTime(event.completedAt) : "waktu tidak tersedia";
+      const addTransactionButton = $("btn-add-transaction");
+      if (addTransactionButton) addTransactionButton.hidden = !lifecycle.canEditLedger;
+      const transactionActionsHeader = $("transaction-actions-header");
+      if (transactionActionsHeader) transactionActionsHeader.hidden = !lifecycle.canEditLedger;
+      const transactionDescription = $("transactions-description");
+      if (transactionDescription && lifecycle.isArchived) transactionDescription.textContent = "Riwayat pengeluaran yang tercatat selama event.";
+      const emptyTransactionsHelp = $("transactions-empty-help");
+      if (emptyTransactionsHelp && lifecycle.isArchived) emptyTransactionsHelp.textContent = "Tidak ada transaksi yang tercatat sebelum event diarsipkan.";
+
+      const notesEl = $("event-notes");
+      if (notesEl) {
+        if (event.notes && event.notes.trim()) {
+          notesEl.textContent = event.notes;
+          notesEl.hidden = false;
+        } else {
+          notesEl.hidden = true;
+        }
+      }
+
+      // Participants List
+      const countBadge = $("participants-count-text");
+      if (countBadge) countBadge.textContent = `${participants.length} orang`;
+
+      const pContainer = $("participants-container");
+      if (pContainer) {
+        pContainer.innerHTML = "";
+        if (participants.length === 0) {
+          const emptyText = document.createElement("span");
+          emptyText.className = "muted text-sm";
+          emptyText.textContent = "Belum ada peserta didaftarkan.";
+          pContainer.appendChild(emptyText);
+        } else {
+          participants.forEach((p) => {
+            const pill = document.createElement("span");
+            pill.className = "participant-tag";
+            pill.textContent = p.name;
+            pContainer.appendChild(pill);
+          });
+        }
+      }
+
+      // 2. Perhitungan Summary Derived (Checkpoint M10.1, M10.2, M10.3)
+      const budget = event.budget;
+      const totalExpenses = transactions.reduce(
+        (sum, tx) => sum + (tx.quantity * tx.unitPrice),
+        0
+      );
+      const remaining = budget - totalExpenses;
+      const participantCount = participants.length;
+
+      // Update Card 1: Anggaran
+      const budgetEl = $("summary-budget");
+      if (budgetEl) budgetEl.textContent = formatCurrency(budget);
+
+      // Update Card 2: Total Pengeluaran
+      const expensesEl = $("summary-expenses");
+      if (expensesEl) expensesEl.textContent = formatCurrency(totalExpenses);
+      const expensesSub = $("summary-expenses-sub");
+      if (expensesSub) expensesSub.textContent = `${transactions.length} transaksi dicatat`;
+
+      // Update Card 3: Sisa Anggaran / Over Budget (Checkpoint M10.3)
+      const remainingCard = $("stat-card-remaining");
+      const remainingLabel = $("remaining-label");
+      const remainingEl = $("summary-remaining");
+      const remainingTag = $("remaining-status-tag");
+
+      if (remaining < 0) {
+        // OVER BUDGET STATE
+        const overAmount = Math.abs(remaining);
+        if (remainingCard) remainingCard.classList.add("card-overbudget");
+        if (remainingLabel) remainingLabel.textContent = "Melebihi anggaran";
+        if (remainingEl) remainingEl.textContent = formatCurrency(overAmount);
+        if (remainingTag) remainingTag.textContent = "Melebihi anggaran!";
+      } else {
+        // NORMAL STATE
+        if (remainingCard) remainingCard.classList.remove("card-overbudget");
+        if (remainingLabel) remainingLabel.textContent = "Sisa Anggaran";
+        if (remainingEl) remainingEl.textContent = formatCurrency(remaining);
+        if (remainingTag) remainingTag.textContent = "Dalam batas anggaran";
+      }
+
+      // Update Card 4: Total Peserta
+      const countEl = $("summary-participants");
+      if (countEl) countEl.textContent = String(participantCount);
+
+      // 3. Render Transactions List (Checkpoint M10.1)
+      const emptyBox = $("transactions-empty");
+      const tableWrap = $("transactions-table-wrap");
+      const tbody = $("transactions-tbody");
+
+      if (transactions.length === 0) {
+        if (emptyBox) emptyBox.hidden = false;
+        if (tableWrap) tableWrap.hidden = true;
+      } else {
+        if (emptyBox) emptyBox.hidden = true;
+        if (tableWrap) tableWrap.hidden = false;
+
+        if (tbody) {
+          tbody.innerHTML = "";
+          transactions.forEach((tx) => {
+            const tr = document.createElement("tr");
+            tr.setAttribute("role", "row");
+
+            // 1. Item Name
+            const tdName = document.createElement("td");
+            tdName.className = "tx-name-cell";
+            const nameStrong = document.createElement("strong");
+            nameStrong.textContent = tx.name;
+            tdName.appendChild(nameStrong);
+            tr.appendChild(tdName);
+
+            // 2. Qty
+            const tdQty = document.createElement("td");
+            tdQty.className = "text-right mono";
+            tdQty.textContent = String(tx.quantity);
+            tr.appendChild(tdQty);
+
+            // 3. Unit Price
+            const tdPrice = document.createElement("td");
+            tdPrice.className = "text-right mono";
+            tdPrice.textContent = formatCurrency(tx.unitPrice);
+            tr.appendChild(tdPrice);
+
+            // 4. Total (Derived: qty * unitPrice)
+            const tdTotal = document.createElement("td");
+            tdTotal.className = "text-right mono";
+            const totalVal = tx.quantity * tx.unitPrice;
+            tdTotal.textContent = formatCurrency(totalVal);
+            tr.appendChild(tdTotal);
+
+            // 5. Payment Method
+            const tdMethod = document.createElement("td");
+            const badgeMethod = document.createElement("span");
+            badgeMethod.className = `badge-method badge-${tx.paymentMethod}`;
+            badgeMethod.textContent = tx.paymentMethod === "cash" ? "Tunai"
+              : tx.paymentMethod === "ewallet" ? "Dompet digital"
+              : formatPaymentMethod(tx.paymentMethod);
+            tdMethod.appendChild(badgeMethod);
+            tr.appendChild(tdMethod);
+
+            // 6. Time & Note
+            const tdMeta = document.createElement("td");
+            const timeSpan = document.createElement("span");
+            timeSpan.className = "muted text-sm";
+            timeSpan.textContent = formatDateTime(tx.transactionAt);
+            tdMeta.appendChild(timeSpan);
+
+            if (tx.note && tx.note.trim()) {
+              const noteDiv = document.createElement("div");
+              noteDiv.className = "tx-note text-sm";
+              noteDiv.textContent = tx.note;
+              tdMeta.appendChild(noteDiv);
+            }
+            tr.appendChild(tdMeta);
+
+            // 7. Actions (Edit & Delete - Checkpoint M11.2, M11.3)
+            const tdActions = document.createElement("td");
+            tdActions.className = "text-right action-cell";
+            tdActions.hidden = !lifecycle.canEditLedger;
+
+            const btnEdit = document.createElement("button");
+            btnEdit.type = "button";
+            btnEdit.className = "btn btn-outline btn-sm action-btn";
+            btnEdit.textContent = "Ubah";
+            btnEdit.addEventListener("click", () => {
+              window.dispatchEvent(
+                new CustomEvent("open-tx-form", {
+                  detail: { mode: "edit", tx },
+                })
+              );
+            });
+
+            const btnDelete = document.createElement("button");
+            btnDelete.type = "button";
+            btnDelete.className = "btn btn-danger btn-sm action-btn";
+            btnDelete.textContent = "Hapus";
+            btnDelete.addEventListener("click", async () => {
+              const confirmed = await confirmDialog({
+                title: `Hapus pengeluaran "${tx.name}"?`,
+                message: "Pengeluaran ini akan dihapus permanen dari event.",
+                confirmLabel: "Hapus pengeluaran",
+                cancelLabel: "Batal",
+                destructive: true,
+              });
+              if (!confirmed) return;
+
+              btnDelete.disabled = true;
+              btnDelete.textContent = "…";
+
+              try {
+                const res = await fetchWithAuth(`/transactions/${tx.id}`, {
+                  method: "DELETE",
+                });
+                if (!res.ok) {
+                  const errData = await res.json().catch(() => ({}));
+                  throw new Error(errData.error || `Gagal menghapus transaksi (${res.status})`);
+                }
+                // Refresh summary real-time (Checkpoint M11.2)
+                loadEventDetail();
+              } catch (err: unknown) {
+                await alertDialog({ message: err instanceof Error ? err.message : "Gagal menghapus transaksi." });
+                btnDelete.disabled = false;
+                btnDelete.textContent = "Hapus";
+              }
+            });
+
+            tdActions.appendChild(btnEdit);
+            tdActions.appendChild(btnDelete);
+            tr.appendChild(tdActions);
+
+            const labels = ["Keperluan", "Jumlah", "Harga satuan", "Total", "Metode", "Waktu / catatan", "Aksi"];
+            Array.from(tr.cells).forEach((cell, index) => {
+              cell.dataset.label = labels[index];
+              cell.setAttribute("role", "cell");
+            });
+            btnEdit.setAttribute("aria-label", `Ubah transaksi ${tx.name}`);
+            btnDelete.setAttribute("aria-label", `Hapus transaksi ${tx.name}`);
+            tbody.appendChild(tr);
+          });
+        }
+      }
+
+      // Update Settlement Summary (Checkpoint M12.1, M12.2, M12.3)
+      window.dispatchEvent(new CustomEvent("update-settlement", { detail }));
+      window.dispatchEvent(new CustomEvent("update-budget-channels", { detail }));
+
+      // Tampilkan konten dashboard
+      showState("content");
+    };
+
+    // Load data event detail dari Backend API
+    const loadEventDetail = async () => {
+      const eventId = getEventIdFromUrl();
+      if (!eventId) {
+        showState("error");
+        const msg = $("dashboard-error-msg");
+        if (msg) msg.textContent = "ID event tidak ditemukan pada URL.";
+        return;
+      }
+
+      showState("loading");
+
+      try {
+        const res = await fetchWithAuth(`/events/${eventId}`);
+        if (!res.ok) {
+          if (res.status === 404) {
+            showState("error");
+            const msg = $("dashboard-error-msg");
+            if (msg) msg.textContent = "Event tidak ditemukan atau bukan milik Anda.";
+            return;
+          }
+          const errData = await res.json().catch(() => ({}));
+          throw new Error(errData.error || `HTTP ${res.status}`);
+        }
+
+        const data: EventDetail = await res.json();
+        renderDashboard(data);
+      } catch (err: unknown) {
+        console.error("[Economy] Gagal memuat event:", err);
+        showState("error");
+        const msg = $("dashboard-error-msg");
+        if (msg) msg.textContent = err instanceof Error ? err.message : "Gagal memuat event.";
+      }
+    };
+
+    // Inisialisasi Auth & Halaman
+    const init = async () => {
+      // 1. Cek sesi Supabase
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session) {
+          window.location.href = "/";
+          return;
+        }
+
+        const emailEl = $("user-email");
+        if (emailEl && session.user?.email) {
+          emailEl.textContent = session.user.email;
+        }
+      } catch (err) {
+        console.error("[Economy] Auth check error:", err);
+        window.location.href = "/";
+        return;
+      }
+
+      // 2. Setup tombol logout
+      $("btn-logout")?.addEventListener("click", async () => {
+        await supabase.auth.signOut();
+        window.location.href = "/";
+      });
+
+      const completionDialog = $("complete-event-dialog") as HTMLDialogElement | null;
+      const completionError = $("complete-event-error");
+      $("btn-complete-event")?.addEventListener("click", () => {
+        if (completionError) {
+          completionError.textContent = "";
+          completionError.hidden = true;
+        }
+        completionDialog?.showModal();
+      });
+      $("cancel-event-completion")?.addEventListener("click", () => completionDialog?.close());
+      $("confirm-event-completion")?.addEventListener("click", async () => {
+        const eventId = getEventIdFromUrl();
+        const confirmButton = $("confirm-event-completion") as HTMLButtonElement | null;
+        if (!eventId || !confirmButton) return;
+        confirmButton.disabled = true;
+        confirmButton.textContent = "Mengarsipkan…";
+        if (completionError) {
+          completionError.textContent = "";
+          completionError.hidden = true;
+        }
+        try {
+          const response = await fetchWithAuth(`/events/${encodeURIComponent(eventId)}/complete`, { method: "POST" });
+          if (!response.ok) {
+            const data = await response.json().catch(() => ({}));
+            throw new Error(data.error || "Gagal menyelesaikan event.");
+          }
+          completionDialog?.close();
+          await loadEventDetail();
+        } catch (err) {
+          if (completionError) {
+            completionError.textContent = err instanceof Error ? err.message : "Gagal menyelesaikan event.";
+            completionError.hidden = false;
+          }
+        } finally {
+          confirmButton.disabled = false;
+          confirmButton.textContent = "Selesaikan & arsipkan";
+        }
+      });
+
+      // 4. Setup tombol tambah transaksi (Checkpoint M11.1, M11.3)
+      $("btn-add-transaction")?.addEventListener("click", () => {
+        const eventId = getEventIdFromUrl();
+        if (eventId) {
+          window.dispatchEvent(
+            new CustomEvent("open-tx-form", {
+              detail: { mode: "add", eventId },
+            })
+          );
+        }
+      });
+
+      // 5. Listener event refresh setelah transaksi dimutasi (Checkpoint M11.2)
+      window.addEventListener("refresh-event-detail", () => {
+        loadEventDetail();
+      });
+
+      // 3. Load detail event
+      await loadEventDetail();
+    };
+
+    init();
+  </script>
+
+  <!-- Modal Dialog Form Transaksi (Checkpoint M11.1, M11.3) -->
+  <TransactionForm />
+</Layout>
+
+<style>
+  .nav-back-wrap { display: flex; margin-left: -12px; }
+  .dashboard-stack { display: flex; flex-direction: column; gap: 24px; }
+  .event-header-card { display: flex; flex-direction: column; gap: 20px; }
+  .event-header-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+  .event-header-actions { display: flex; flex-shrink: 0; }
+  .event-archive-notice { display: flex; align-items: flex-start; gap: 14px; padding: 16px; border: 1px solid #b9cfba; border-radius: var(--radius-md); background: #edf5ee; }
+  .event-archive-notice p { margin: 4px 0 0; color: var(--text-muted); font-size: .85rem; }
+  .event-archive-mark { display: inline-flex; flex-shrink: 0; align-items: center; padding: 5px 8px; border: 1px solid #b9cfba; border-radius: 999px; background: #e6f1e6; color: #315c39; font-size: .65rem; font-weight: 700; letter-spacing: .06em; }
+  .completion-dialog { width: min(480px, calc(100vw - 32px)); max-width: none; padding: 0; border: 0; background: transparent; color: var(--text-main); }
+  .completion-dialog::backdrop { background: rgb(18 27 21 / 48%); backdrop-filter: blur(3px); }
+  .completion-dialog-content { display: flex; flex-direction: column; gap: 16px; padding: 24px; border: 1px solid var(--border-subtle); border-radius: var(--radius-lg); background: var(--bg-surface); box-shadow: 0 24px 70px rgb(0 0 0 / 20%); }
+  .completion-dialog-content h2, .completion-dialog-content p { margin: 0; }
+  .completion-dialog-content h2 { font-size: 1.25rem; }
+  .completion-dialog-content p { line-height: 1.6; }
+  .completion-dialog-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 8px; }
+  .event-title-meta { min-width: 0; display: flex; flex-direction: column; gap: 8px; }
+  .event-title-line { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  .event-heading { font-size: 24px; line-height: 1.4; overflow-wrap: anywhere; }
+  .event-date-text { margin: 0; font-size: 13px; }
+  .event-notes { font-size: 14px; margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+  .participants-block { display: flex; flex-direction: column; gap: 12px; border-top: 1px solid var(--border-subtle); padding-top: 16px; }
+  .participants-header { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .participants-label { font-size: 12px; font-weight: 600; }
+  .participants-count-badge { font-size: 12px; }
+  .participants-pills { display: flex; flex-wrap: wrap; gap: 8px; }
+  .transactions-section { display: flex; flex-direction: column; gap: 16px; }
+  @media (max-width: 560px) {
+    .event-header-row { flex-direction: column; }
+    .event-header-actions, .event-header-actions .btn { width: 100%; }
+    .event-archive-notice { flex-direction: column; }
+    .completion-dialog-content { padding: 20px; }
+    .completion-dialog-actions { flex-direction: column-reverse; }
+    .completion-dialog-actions .btn { width: 100%; }
+  }
+</style>

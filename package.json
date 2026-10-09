@@ -9,12 +9,19 @@
     "dev": "astro dev",
     "build": "astro build",
     "preview": "astro preview",
+    "check": "astro check",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
     "astro": "astro"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.117.3",
     "astro": "^7.3.6"
   },
   "allowScripts": {
     "esbuild": true
+  },
+  "devDependencies": {
+    "@astrojs/check": "^0.9.10",
+    "typescript": "^5.7.3"
   }
 }

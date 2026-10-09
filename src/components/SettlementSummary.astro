@@ -1,0 +1,249 @@
+---
+// Komponen perhitungan pembagian sisa uang per peserta (Settlement)
+---
+
+<section id="settlement-section" class="card settlement-card" hidden>
+  <div class="settlement-header">
+    <div class="settlement-title-wrap">
+      <h3>Laporan akhir event</h3>
+      <p class="muted subtitle">Ringkasan anggaran dan hasil pengeluaran setelah event selesai.</p>
+    </div>
+  </div>
+
+  <div class="archive-report-grid" aria-label="Ringkasan keuangan akhir event">
+    <div class="archive-report-item"><span>Anggaran awal</span><strong id="report-budget">Rp0</strong></div>
+    <div class="archive-report-item"><span>Total pengeluaran</span><strong id="report-expenses">Rp0</strong></div>
+    <div class="archive-report-item"><span>Sisa dana tunai</span><strong id="report-cash-balance">—</strong></div>
+    <div class="archive-report-item"><span>Sisa dana digital / QRIS</span><strong id="report-digital-balance">—</strong></div>
+    <div id="report-outcome" class="archive-report-item archive-report-outcome" role="status">
+      <span id="report-outcome-label">Hasil akhir</span>
+      <strong id="report-outcome-amount">Rp0</strong>
+    </div>
+  </div>
+
+  <!-- State 1: Sisa Positif (Checkpoint M12.1, M12.3) -->
+  <div id="settlement-positive-wrap" class="settlement-content" hidden>
+    <div class="settlement-summary-box">
+      <div class="settlement-stat">
+        <span class="stat-label muted">Sisa Dana Bersih</span>
+        <strong id="settlement-total-remaining" class="stat-val mono text-primary">Rp0</strong>
+      </div>
+      <div class="settlement-divider">÷</div>
+      <div class="settlement-stat">
+        <span class="stat-label muted">Total Peserta</span>
+        <strong id="settlement-total-participants" class="stat-val mono">0 Orang</strong>
+      </div>
+      <div class="settlement-divider">=</div>
+      <div class="settlement-stat highlight-box">
+        <span class="stat-label">Hak per Orang</span>
+        <strong id="settlement-share-per-person" class="stat-val mono text-primary">Rp0</strong>
+      </div>
+    </div>
+    <p class="settlement-rounding muted">Bagian per orang dibulatkan ke bawah ke rupiah penuh.</p>
+
+    <!-- Mapping Peserta (Checkpoint M12.3) -->
+    <div class="settlement-table-wrap">
+      <table class="settlement-table">
+        <thead>
+          <tr>
+            <th scope="col">Nama Peserta</th>
+            <th scope="col" class="text-right">Bagian Pengembalian</th>
+          </tr>
+        </thead>
+        <tbody id="settlement-tbody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- State 2: Over Budget (Checkpoint M12.2) -->
+  <div id="settlement-overbudget-wrap" class="card-empty-note overbudget-note" hidden>
+    <svg class="ui-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7h.01"/></svg>
+    <div>
+      <strong>Tidak ada sisa dana untuk dibagikan.</strong>
+      <p id="settlement-overbudget-text" class="muted text-sm"></p>
+    </div>
+  </div>
+
+  <!-- State 3: Sisa Tepat Rp0 (Checkpoint M12.2) -->
+  <div id="settlement-zero-wrap" class="card-empty-note" hidden>
+    <svg class="ui-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7h.01"/></svg>
+    <div>
+      <strong>Anggaran habis terpakai (Sisa Rp0).</strong>
+      <p class="muted text-sm">Semua dana anggaran telah teralokasi untuk pengeluaran, tidak ada dana yang perlu dikembalikan.</p>
+    </div>
+  </div>
+
+  <!-- State 4: Belum Ada Peserta (Defensive) -->
+  <div id="settlement-no-participants-wrap" class="card-empty-note" hidden>
+    <svg class="ui-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="8" r="3"/><path d="M3 21v-3a6 6 0 0 1 12 0v3M16 5a3 3 0 0 1 0 6M21 21v-3a6 6 0 0 0-4-5"/></svg>
+    <div>
+      <strong>Belum ada peserta terdaftar.</strong>
+      <p class="muted text-sm">Tambahkan peserta pada event ini untuk menghitung pembagian sisa per orang.</p>
+    </div>
+  </div>
+</section>
+
+<script>
+  import { formatCurrency } from "../lib/currency";
+  import { calculateBudgetChannels } from "../lib/budget-channels";
+  import { getBudgetOutcome } from "../lib/event-lifecycle";
+  import type { EventDetail } from "../types";
+
+  const $ = <T extends HTMLElement = HTMLElement>(id: string): T | null =>
+    document.getElementById(id) as T | null;
+
+  // Handler update perhitungan settlement
+  window.addEventListener("update-settlement", (e: Event) => {
+    const detail = (e as CustomEvent<EventDetail>).detail;
+    if (!detail) return;
+
+    const { event, participants = [], transactions = [] } = detail;
+    const section = $("settlement-section");
+    if (section) section.hidden = event.status !== "completed";
+    if (event.status !== "completed") return;
+
+    const totalExpenses = transactions.reduce(
+      (sum, tx) => sum + tx.quantity * tx.unitPrice,
+      0
+    );
+    const remaining = event.budget - totalExpenses;
+    const outcome = getBudgetOutcome(event.budget, totalExpenses);
+    const channelSummary = calculateBudgetChannels(event.budget, event.cashBudget, transactions);
+    const count = participants.length;
+
+    const reportBudget = $("report-budget");
+    if (reportBudget) reportBudget.textContent = formatCurrency(event.budget);
+    const reportExpenses = $("report-expenses");
+    if (reportExpenses) reportExpenses.textContent = formatCurrency(totalExpenses);
+    const reportCash = $("report-cash-balance");
+    if (reportCash) reportCash.textContent = channelSummary.cashRemaining === null ? "Belum dialokasikan" : formatCurrency(channelSummary.cashRemaining);
+    const reportDigital = $("report-digital-balance");
+    if (reportDigital) reportDigital.textContent = channelSummary.digitalRemaining === null ? "Belum dialokasikan" : formatCurrency(channelSummary.digitalRemaining);
+    const reportOutcome = $("report-outcome");
+    const reportOutcomeLabel = $("report-outcome-label");
+    const reportOutcomeAmount = $("report-outcome-amount");
+    if (reportOutcomeLabel) reportOutcomeLabel.textContent = outcome.kind === "deficit"
+      ? "Kelebihan pengeluaran"
+      : outcome.kind === "surplus" ? "Sisa anggaran" : "Anggaran terpakai";
+    if (reportOutcomeAmount) reportOutcomeAmount.textContent = formatCurrency(outcome.amount);
+    reportOutcome?.classList.toggle("is-deficit", outcome.kind === "deficit");
+    reportOutcome?.classList.toggle("is-surplus", outcome.kind === "surplus");
+
+
+    const positiveWrap = $("settlement-positive-wrap");
+    const overbudgetWrap = $("settlement-overbudget-wrap");
+    const zeroWrap = $("settlement-zero-wrap");
+    const noParticipantsWrap = $("settlement-no-participants-wrap");
+
+    // Sembunyikan semua wrap state terlebih dahulu
+    if (positiveWrap) positiveWrap.hidden = true;
+    if (overbudgetWrap) overbudgetWrap.hidden = true;
+    if (zeroWrap) zeroWrap.hidden = true;
+    if (noParticipantsWrap) noParticipantsWrap.hidden = true;
+
+    // Evaluasi State Sesuai Spek
+    if (count === 0) {
+      // Defensive: Nol peserta
+      if (noParticipantsWrap) noParticipantsWrap.hidden = false;
+      return;
+    }
+
+    if (remaining < 0) {
+      // Checkpoint M12.2: Over budget (remaining < 0)
+      if (overbudgetWrap) {
+        overbudgetWrap.hidden = false;
+        const text = $("settlement-overbudget-text");
+        if (text) {
+          text.textContent = `Pengeluaran melebihi anggaran sebesar ${formatCurrency(Math.abs(remaining))}.`;
+        }
+      }
+      return;
+    }
+
+    if (remaining === 0) {
+      // Checkpoint M12.2: Nol sisa (remaining === 0)
+      if (zeroWrap) zeroWrap.hidden = false;
+      return;
+    }
+
+    // Checkpoint M12.1: Sisa Positif (remaining > 0)
+    // Formula: sharePerPerson = remaining / count
+    const sharePerPerson = Math.floor(remaining / count);
+
+    const totalRemEl = $("settlement-total-remaining");
+    if (totalRemEl) totalRemEl.textContent = formatCurrency(remaining);
+
+    const totalPartEl = $("settlement-total-participants");
+    if (totalPartEl) totalPartEl.textContent = `${count} Orang`;
+
+    const shareEl = $("settlement-share-per-person");
+    if (shareEl) shareEl.textContent = formatCurrency(sharePerPerson);
+
+    // Checkpoint M12.3: Mapping Peserta
+    const tbody = $("settlement-tbody");
+    if (tbody) {
+      tbody.innerHTML = "";
+      participants.forEach((p) => {
+        const tr = document.createElement("tr");
+
+        const tdName = document.createElement("td");
+        tdName.className = "participant-name-cell";
+        tdName.textContent = p.name;
+        tr.appendChild(tdName);
+
+        const tdShare = document.createElement("td");
+        tdShare.className = "text-right mono text-share-val";
+        tdShare.textContent = formatCurrency(sharePerPerson);
+        tr.appendChild(tdShare);
+
+        tbody.appendChild(tr);
+      });
+    }
+
+    if (positiveWrap) positiveWrap.hidden = false;
+  });
+</script>
+
+<style>
+  .settlement-card, .settlement-content { display: flex; flex-direction: column; gap: 16px; }
+  .settlement-title-wrap h3 { font-size: 18px; }
+  .archive-report-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+  .archive-report-item { display: flex; flex-direction: column; justify-content: space-between; gap: 10px; min-width: 0; padding: 16px; border: 1px solid var(--border-subtle); border-radius: var(--radius-md); background: var(--bg-surface); }
+  .archive-report-item > span { color: var(--text-muted); font-size: 12px; font-weight: 600; }
+  .archive-report-item > strong { color: var(--text-main); font-size: 16px; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+  .archive-report-outcome { grid-column: 1 / -1; flex-direction: row; align-items: center; background: #e6f1e6; border-color: #b9cfba; }
+  .archive-report-outcome.is-deficit { background: var(--status-error-bg); border-color: var(--status-error-border, var(--status-error-text)); }
+  .archive-report-outcome.is-surplus > strong { color: #315c39; }
+  .archive-report-outcome.is-deficit > strong { color: var(--status-error-text); }
+  .settlement-summary-box { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; gap: 20px; background: var(--bg-surface-variant); border-radius: var(--radius-md); padding: 20px; }
+  .settlement-stat { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+  .stat-label { font-size: 12px; font-weight: 600; }
+  .stat-val { font-size: 18px; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+  .settlement-divider { font-size: 20px; color: var(--text-muted); }
+  .highlight-box { color: var(--on-primary-container); }
+  .text-primary { color: var(--primary); }
+  .settlement-rounding { margin: 0; font-size: 12px; }
+  .settlement-table-wrap { border: 1px solid var(--border-subtle); border-radius: var(--radius-md); overflow: hidden; }
+  .settlement-table { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 14px; }
+  .settlement-table th { background: var(--bg-surface-variant); font-size: 12px; font-weight: 600; padding: 12px 16px; text-align: left; }
+  .settlement-table th.text-right { text-align: right; }
+  .settlement-table :global(td) { padding: 12px 16px; border-top: 1px solid var(--border-subtle); overflow-wrap: anywhere; }
+  .settlement-table :global(.participant-name-cell) { font-weight: 600; }
+  .settlement-table :global(.text-share-val) { color: var(--primary); font-weight: 600; }
+  .card-empty-note { display: flex; align-items: flex-start; gap: 12px; background: var(--bg-surface-variant); padding: 16px; border-radius: var(--radius-md); }
+  .card-empty-note p { margin: 4px 0 0; }
+  .card-empty-note .ui-icon { flex-shrink: 0; }
+  .overbudget-note { background: var(--status-error-bg); color: var(--status-error-text); }
+  .overbudget-note .muted { color: inherit; }
+  .text-sm { font-size: 12px; }
+  @media (max-width: 600px) {
+    .archive-report-grid { grid-template-columns: minmax(0, 1fr); }
+    .archive-report-outcome { grid-column: auto; }
+    .settlement-summary-box { grid-template-columns: minmax(0, 1fr); gap: 16px; padding: 16px; }
+    .settlement-divider { display: none; }
+    .settlement-stat { flex-direction: row; align-items: baseline; justify-content: space-between; gap: 16px; }
+    .settlement-stat:last-child { padding-top: 16px; border-top: 1px solid var(--border-subtle); }
+    .stat-val { font-size: 16px; text-align: right; }
+    .settlement-table th, .settlement-table :global(td) { padding: 12px; }
+  }
+</style>

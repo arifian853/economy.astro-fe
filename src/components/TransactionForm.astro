@@ -1,0 +1,371 @@
+---
+// Komponen modal dialog form transaksi (Tambah & Edit)
+---
+
+<dialog id="tx-modal" class="modal-dialog" aria-labelledby="tx-modal-title">
+  <div class="card tx-form-card">
+    <div class="tx-modal-header">
+      <div class="tx-modal-heading">
+        <span class="tx-modal-mark" aria-hidden="true">
+          <svg class="ui-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3h12v18l-3-2-3 2-3-2-3 2V3Z"/><path d="M9 7h6M9 11h6M9 15h3"/></svg>
+        </span>
+        <div class="tx-modal-title-copy">
+          <p class="tx-modal-context">Catatan kas event</p>
+          <h3 id="tx-modal-title">Tambah pengeluaran</h3>
+          <p class="tx-modal-intro">Total dihitung otomatis.</p>
+        </div>
+      </div>
+      <button type="button" id="btn-close-tx" class="btn btn-ghost close-btn" aria-label="Tutup formulir pengeluaran">
+        <svg class="ui-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg>
+      </button>
+    </div>
+
+    <form id="tx-form" class="modal-form tx-modal-form">
+      <input type="hidden" id="tx-form-id" value="" />
+      <input type="hidden" id="tx-form-event-id" value="" />
+
+      <div class="form-group">
+        <label for="tx-input-name" class="form-label">Keperluan *</label>
+        <input
+          type="text"
+          id="tx-input-name"
+          class="form-control"
+          placeholder="Contoh: Air mineral, konsumsi, bensin…"
+          required
+          maxlength="200"
+        />
+      </div>
+
+      <div class="form-row-2 tx-form-row tx-price-row">
+        <div class="form-group">
+          <label for="tx-input-qty" class="form-label">Jumlah barang *</label>
+          <input
+            type="number"
+            id="tx-input-qty"
+            class="form-control"
+            required
+            min="1"
+            step="1"
+            inputmode="numeric"
+            value="1"
+          />
+        </div>
+        <div class="form-group">
+          <label for="tx-input-price" class="form-label">Harga satuan *</label>
+          <div class="money-input tx-money-input">
+            <span class="money-prefix" aria-hidden="true">Rp</span>
+            <input
+              type="text"
+              id="tx-input-price"
+              class="form-control money-control"
+              placeholder="25,000…"
+              required
+              inputmode="numeric"
+              pattern="[0-9,]+"
+              maxlength="21"
+              autocomplete="off"
+              aria-describedby="tx-price-hint"
+            />
+          </div>
+          <span id="tx-price-hint" class="form-hint">Ribuan otomatis pakai koma.</span>
+        </div>
+      </div>
+
+      <div class="live-total-container tx-total-container">
+        <div class="tx-total-copy">
+          <span class="live-total-label">Total pengeluaran</span>
+          <span id="tx-live-breakdown" class="tx-total-breakdown">1 barang × Rp0</span>
+        </div>
+        <strong id="tx-live-total" class="live-total-value" aria-live="polite" aria-atomic="true">Rp0</strong>
+      </div>
+
+      <div class="form-row-2 tx-form-row">
+        <div class="form-group">
+          <label for="tx-input-method" class="form-label">Metode pembayaran *</label>
+          <select id="tx-input-method" class="form-control">
+            <option value="cash">Tunai</option>
+            <option value="qris" selected>QRIS</option>
+            <option value="transfer">Transfer</option>
+            <option value="ewallet">Dompet digital</option>
+            <option value="other">Lainnya</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="tx-input-time" class="form-label">Waktu transaksi</label>
+          <input type="datetime-local" id="tx-input-time" class="form-control" />
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label for="tx-input-note" class="form-label">Catatan (opsional)</label>
+        <textarea
+          id="tx-input-note"
+          class="form-control"
+          rows="2"
+          placeholder="Toko, bukti nota, atau info tambahan…"
+          maxlength="2000"
+        ></textarea>
+      </div>
+
+      <div id="tx-form-error" class="error-box" role="alert" hidden></div>
+
+      <div class="modal-actions tx-modal-actions">
+        <button type="submit" id="btn-submit-tx" class="btn btn-primary tx-submit-btn">Simpan pengeluaran</button>
+      </div>
+    </form>
+  </div>
+</dialog>
+
+<script>
+  import { fetchWithAuth } from "../lib/api";
+  import { formatCurrency } from "../lib/currency";
+  import { formatMoneyInput, formatMoneyInputState, parseMoneyInput } from "../lib/money-input";
+  import type { Transaction } from "../types";
+
+  const $ = <T extends HTMLElement = HTMLElement>(id: string): T | null =>
+    document.getElementById(id) as T | null;
+
+  const dialog = $("tx-modal") as HTMLDialogElement | null;
+  const form = $("tx-form") as HTMLFormElement | null;
+  const titleEl = $("tx-modal-title");
+  const idInput = $("tx-form-id") as HTMLInputElement | null;
+  const eventIdInput = $("tx-form-event-id") as HTMLInputElement | null;
+  const nameInput = $("tx-input-name") as HTMLInputElement | null;
+  const qtyInput = $("tx-input-qty") as HTMLInputElement | null;
+  const priceInput = $("tx-input-price") as HTMLInputElement | null;
+  const methodInput = $("tx-input-method") as HTMLSelectElement | null;
+  const timeInput = $("tx-input-time") as HTMLInputElement | null;
+  const noteInput = $("tx-input-note") as HTMLTextAreaElement | null;
+  const errorBox = $("tx-form-error");
+  const submitBtn = $("btn-submit-tx") as HTMLButtonElement | null;
+  const closeBtn = $("btn-close-tx") as HTMLButtonElement | null;
+  const liveTotalEl = $("tx-live-total");
+  const liveBreakdownEl = $("tx-live-breakdown");
+
+  // Helper untuk format local datetime input YYYY-MM-DDTHH:mm
+  const toLocalDatetimeString = (date: Date): string => {
+    const pad = (n: number) => String(n).padStart(2, "0");
+    const y = date.getFullYear();
+    const m = pad(date.getMonth() + 1);
+    const d = pad(date.getDate());
+    const hh = pad(date.getHours());
+    const mm = pad(date.getMinutes());
+    return `${y}-${m}-${d}T${hh}:${mm}`;
+  };
+
+  const updateLiveTotal = () => {
+    const quantity = Number(qtyInput?.value || 0);
+    const unitPrice = parseMoneyInput(priceInput?.value || "") ?? 0;
+    const total = Math.max(0, quantity) * Math.max(0, unitPrice);
+
+    if (liveTotalEl) liveTotalEl.textContent = formatCurrency(total);
+    if (liveBreakdownEl) {
+      liveBreakdownEl.textContent = `${quantity || 0} barang × ${formatCurrency(unitPrice)}`;
+    }
+  };
+
+  const formatMoneyField = (input: HTMLInputElement) => {
+    const { value, caret } = formatMoneyInputState(
+      input.value,
+      input.selectionStart ?? input.value.length,
+    );
+    input.value = value;
+    input.setSelectionRange(caret, caret);
+  };
+
+  qtyInput?.addEventListener("input", updateLiveTotal);
+  if (priceInput) {
+    priceInput.addEventListener("input", () => {
+      formatMoneyField(priceInput);
+      updateLiveTotal();
+    });
+  }
+
+  // Buka Modal Tambah/Edit
+  window.addEventListener("open-tx-form", (e: Event) => {
+    const detail = (e as CustomEvent<{
+      mode: "add" | "edit";
+      eventId?: string;
+      tx?: Transaction;
+    }>).detail;
+
+    if (!dialog) return;
+
+    if (errorBox) {
+      errorBox.textContent = "";
+      errorBox.hidden = true;
+    }
+
+    if (detail.mode === "add") {
+      if (titleEl) titleEl.textContent = "Tambah pengeluaran";
+      if (submitBtn) submitBtn.textContent = "Simpan pengeluaran";
+      if (idInput) idInput.value = "";
+      if (eventIdInput) eventIdInput.value = detail.eventId || "";
+
+      if (nameInput) nameInput.value = "";
+      if (qtyInput) qtyInput.value = "1";
+      if (priceInput) priceInput.value = "";
+      if (methodInput) methodInput.value = "qris";
+      if (timeInput) timeInput.value = toLocalDatetimeString(new Date());
+      if (noteInput) noteInput.value = "";
+    } else if (detail.mode === "edit" && detail.tx) {
+      const tx = detail.tx;
+      if (titleEl) titleEl.textContent = "Ubah pengeluaran";
+      if (submitBtn) submitBtn.textContent = "Simpan perubahan";
+      if (idInput) idInput.value = tx.id;
+      if (eventIdInput) eventIdInput.value = tx.eventId || "";
+
+      if (nameInput) nameInput.value = tx.name;
+      if (qtyInput) qtyInput.value = String(tx.quantity);
+      if (priceInput) priceInput.value = formatMoneyInput(tx.unitPrice);
+      if (methodInput) methodInput.value = tx.paymentMethod;
+      if (timeInput) {
+        timeInput.value = tx.transactionAt
+          ? toLocalDatetimeString(new Date(tx.transactionAt))
+          : toLocalDatetimeString(new Date());
+      }
+      if (noteInput) noteInput.value = tx.note || "";
+    }
+
+    updateLiveTotal();
+    dialog.showModal();
+    if (window.matchMedia("(pointer: fine)").matches) {
+      nameInput?.focus({ preventScroll: true });
+    } else {
+      closeBtn?.focus({ preventScroll: true });
+    }
+  });
+
+  const closeModal = () => {
+    dialog?.close();
+  };
+
+  dialog?.addEventListener("cancel", (event) => {
+    event.preventDefault();
+  });
+  dialog?.addEventListener("click", (event) => {
+    if (event.target === dialog) {
+      event.preventDefault();
+      event.stopPropagation();
+    }
+  });
+
+  closeBtn?.addEventListener("click", closeModal);
+
+  // Submit Handler (Checkpoint M11.2, M11.3)
+  form?.addEventListener("submit", async (e) => {
+    e.preventDefault();
+
+    const id = idInput?.value;
+    const eventId = eventIdInput?.value;
+    const name = nameInput?.value.trim();
+    const quantity = Number(qtyInput?.value);
+    const unitPrice = parseMoneyInput(priceInput?.value || "");
+    const paymentMethod = methodInput?.value;
+    const timeVal = timeInput?.value;
+    const note = noteInput?.value.trim() || null;
+
+    if (!name) {
+      if (errorBox) {
+        errorBox.textContent = "Nama keperluan tidak boleh kosong.";
+        errorBox.hidden = false;
+      }
+      nameInput?.focus();
+      return;
+    }
+
+    if (isNaN(quantity) || quantity < 1) {
+      if (errorBox) {
+        errorBox.textContent = "Jumlah minimal 1.";
+        errorBox.hidden = false;
+      }
+      qtyInput?.focus();
+      return;
+    }
+
+    if (unitPrice === null) {
+      if (errorBox) {
+        errorBox.textContent = "Masukkan harga satuan dalam rupiah yang valid.";
+        errorBox.hidden = false;
+      }
+      priceInput?.focus();
+      return;
+    }
+
+    if (!id && !eventId) {
+      if (errorBox) {
+        errorBox.textContent = "Event ID tidak ditemukan.";
+        errorBox.hidden = false;
+      }
+      return;
+    }
+
+    if (errorBox) errorBox.hidden = true;
+    form?.setAttribute("aria-busy", "true");
+    if (submitBtn) {
+      submitBtn.disabled = true;
+      submitBtn.textContent = "Menyimpan…";
+    }
+    if (closeBtn) closeBtn.disabled = true;
+
+    try {
+      const transactionAt = timeVal ? new Date(timeVal).toISOString() : new Date().toISOString();
+
+      if (!id) {
+        // Mode Add: POST /api/events/:eventId/transactions
+        const res = await fetchWithAuth(`/events/${eventId}/transactions`, {
+          method: "POST",
+          body: JSON.stringify({
+            name,
+            quantity,
+            unitPrice,
+            paymentMethod,
+            transactionAt,
+            note,
+          }),
+        });
+
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({}));
+          throw new Error(errData.error || `Gagal menambah transaksi (${res.status})`);
+        }
+      } else {
+        // Mode Edit: PATCH /api/transactions/:id
+        const res = await fetchWithAuth(`/transactions/${id}`, {
+          method: "PATCH",
+          body: JSON.stringify({
+            name,
+            quantity,
+            unitPrice,
+            paymentMethod,
+            transactionAt,
+            note,
+          }),
+        });
+
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({}));
+          throw new Error(errData.error || `Gagal memperbarui transaksi (${res.status})`);
+        }
+      }
+
+      closeModal();
+      // Notifikasi refresh dashboard real-time (Checkpoint M11.2)
+      window.dispatchEvent(new CustomEvent("refresh-event-detail"));
+    } catch (err: unknown) {
+      console.error("[Economy] Transaction mutation error:", err);
+      if (errorBox) {
+        errorBox.textContent = err instanceof Error ? err.message : "Terjadi kesalahan.";
+        errorBox.hidden = false;
+      }
+    } finally {
+      form?.removeAttribute("aria-busy");
+      if (closeBtn) closeBtn.disabled = false;
+      if (submitBtn) {
+        submitBtn.disabled = false;
+        submitBtn.textContent = id ? "Simpan perubahan" : "Simpan pengeluaran";
+      }
+    }
+  });
+</script>
+
