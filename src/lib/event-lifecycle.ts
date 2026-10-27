@@ -1,3 +1,4 @@
+import { subtractMoney, compareMoney, absMoney, type Money } from './money';
 import type { EventStatus } from "../types";
 
 export type EventLifecycleView = {
@@ -22,13 +23,14 @@ export function getEventLifecycleView(status: EventStatus): EventLifecycleView {
 }
 
 export type BudgetOutcome =
-  | { kind: "surplus"; amount: number }
-  | { kind: "balanced"; amount: 0 }
-  | { kind: "deficit"; amount: number };
+  | { kind: "surplus"; amount: Money }
+  | { kind: "balanced"; amount: Money }
+  | { kind: "deficit"; amount: Money };
 
-export function getBudgetOutcome(budget: number, totalExpenses: number): BudgetOutcome {
-  const balance = budget - totalExpenses;
-  if (balance > 0) return { kind: "surplus", amount: balance };
-  if (balance < 0) return { kind: "deficit", amount: Math.abs(balance) };
-  return { kind: "balanced", amount: 0 };
+export function getBudgetOutcome(budget: Money, totalExpenses: Money, currency = 'IDR'): BudgetOutcome {
+  const balance = subtractMoney(budget, totalExpenses, currency);
+  const comparison = compareMoney(balance, '0', currency);
+  if (comparison > 0) return { kind: "surplus", amount: balance };
+  if (comparison < 0) return { kind: "deficit", amount: absMoney(balance, currency) };
+  return { kind: "balanced", amount: balance };
 }

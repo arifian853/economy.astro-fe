@@ -16,17 +16,20 @@ import EventForm from "../components/EventForm.astro";
   </section>
 
   <!-- Halaman Login (Tampil jika belum login) -->
-  <main id="login-view" class="center-screen login-screen" hidden>
-    <div class="card login-panel">
+  <main id="login-view" class="login-screen" hidden>
+    <div class="login-panel">
       <section class="login-intro" aria-labelledby="login-title">
-        <h1 id="login-title">Economy</h1>
-        <p class="login-purpose">Keuangan event, dari anggaran hingga pembagian sisa dana.</p>
-        <p class="muted login-description">Catat pengeluaran kegiatan dan hitung pembagian sisa dana secara rata untuk setiap peserta.</p>
-        <dl class="login-tasks">
-          <div><dt>Anggaran</dt><dd>Tentukan dana dan peserta event.</dd></div>
-          <div><dt>Pengeluaran</dt><dd>Catat transaksi selama kegiatan.</dd></div>
-          <div><dt>Pembagian sisa</dt><dd>Lihat bagian pengembalian tiap peserta.</dd></div>
-        </dl>
+        <p class="eyebrow">Economy — Live Ledger</p>
+        <h1 id="login-title">Spend together.<br /><span>See the numbers clearly.</span></h1>
+        <p class="login-description">Catat pengeluaran event dan bagikan kondisinya secara live.</p>
+        <div class="gate-ledger" aria-label="Contoh ilustrasi keuangan event">
+          <div class="gate-ledger-head"><span>Weekend bersama</span><span class="badge badge-active">Contoh ilustrasi</span></div>
+          <p class="eyebrow">Sisa anggaran</p><strong class="gate-remaining">Rp1.275.000</strong>
+          <progress max="2000000" value="725000" aria-label="Contoh anggaran terpakai"></progress>
+          <dl class="gate-totals"><div><dt>Anggaran</dt><dd>Rp2.000.000</dd></div><div><dt>Terpakai</dt><dd>Rp725.000</dd></div></dl>
+          <div class="gate-entry"><div><strong>Makan siang bersama</strong><span>4 × Rp35.000 · QRIS</span></div><strong>Rp140.000</strong></div>
+          <p class="gate-footnote">Angka ilustrasi · bukan data pengguna</p>
+        </div>
       </section>
       <section class="login-access" aria-labelledby="login-access-title">
         <h2 id="login-access-title">Masuk ke Economy</h2>
@@ -37,23 +40,12 @@ import EventForm from "../components/EventForm.astro";
     </div>
   </main>
 
+    <div slot="account" id="account-controls" class="user-menu" hidden><span id="user-email" class="user-email muted"></span><button type="button" id="btn-logout" class="btn btn-outline btn-sm">Keluar</button></div>
+
   <!-- Halaman Utama Authenticated (My Events) -->
   <section id="app-view" class="app-layout" hidden>
-    <!-- Topbar Navigation -->
-    <header class="topbar">
-      <div class="container topbar-inner">
-        <a href="/" class="brand-link">
-          <span class="brand-title">Economy</span>
-        </a>
-        <div class="user-menu">
-          <span id="user-email" class="user-email muted"></span>
-          <button type="button" id="btn-logout" class="btn btn-outline btn-sm">Keluar</button>
-        </div>
-      </div>
-    </header>
-
     <!-- Main Content Area -->
-    <main class="container main-content">
+    <main id="main-content" class="container main-content">
       <!-- Section Header -->
       <div class="section-header">
         <div>
@@ -103,6 +95,8 @@ import EventForm from "../components/EventForm.astro";
     import { supabase } from "../lib/supabase";
     import { fetchWithAuth } from "../lib/api";
     import { formatCurrency, formatDate } from "../lib/currency";
+    import { subtractMoney, absMoney, compareMoney } from "../lib/money";
+    import { approximateIdr, eventReference, referenceLabel } from "../lib/fx";
     import { getEventLifecycleView } from "../lib/event-lifecycle";
     import { alertDialog, confirmDialog } from "../lib/dialog";
     import type { EventItem } from "../types";
@@ -118,6 +112,8 @@ import EventForm from "../components/EventForm.astro";
       if (sLoad) sLoad.hidden = view !== "loading";
       if (sLogin) sLogin.hidden = view !== "login";
       if (sApp) sApp.hidden = view !== "app";
+      const account = $("account-controls");
+      if (account) account.hidden = view !== "app";
     };
 
     // Toggle state di dalam daftar event
@@ -218,7 +214,23 @@ import EventForm from "../components/EventForm.astro";
         return;
       }
 
+      const lifecycleGroups = new Map<string, HTMLElement>();
+      for (const status of ["active", "upcoming", "completed"]) {
+        const matching = events.filter(event => event.status === status);
+        if (!matching.length) continue;
+        const section = document.createElement('section');
+        section.className = `lifecycle-group lifecycle-${status}`;
+        const heading = document.createElement('h2');
+        heading.textContent = { active: 'Sedang berlangsung', upcoming: 'Akan datang', completed: 'Arsip selesai' }[status]!;
+        const list = document.createElement('div');
+        list.className = 'lifecycle-list';
+        section.append(heading, list);
+        grid.append(section);
+        lifecycleGroups.set(status, list);
+      }
       events.forEach((ev) => {
+        const currency = ev.baseCurrency ?? 'IDR';
+        const money = (amount: import('../lib/money').Money) => formatCurrency(amount, currency);
         const lifecycle = getEventLifecycleView(ev.status);
         const clone = template.content.cloneNode(true) as DocumentFragment;
         const article = clone.querySelector(".event-card");
@@ -237,22 +249,30 @@ import EventForm from "../components/EventForm.astro";
         }
 
         const budgetEl = clone.querySelector(".event-budget");
-        if (budgetEl) budgetEl.textContent = formatCurrency(ev.budget);
+        if (budgetEl) budgetEl.textContent = money(ev.budget);
 
         const expensesEl = clone.querySelector(".event-expenses");
-        if (expensesEl) expensesEl.textContent = formatCurrency(ev.totalExpenses || 0);
+        if (expensesEl) expensesEl.textContent = money(ev.totalExpenses || 0);
 
-        const remaining = ev.budget - (ev.totalExpenses || 0);
+        const remaining = subtractMoney(ev.budget, ev.totalExpenses || 0, currency);
         const remainingEl = clone.querySelector(".event-remaining");
         if (remainingEl) {
-          if (remaining < 0) {
-            remainingEl.textContent = `−${formatCurrency(Math.abs(remaining))}`;
+          if (compareMoney(remaining, '0', currency) < 0) {
+            remainingEl.textContent = `−${money(absMoney(remaining, currency))}`;
             remainingEl.classList.add("negative");
           } else {
-            remainingEl.textContent = formatCurrency(remaining);
+            remainingEl.textContent = money(remaining);
           }
         }
 
+        if (currency !== 'IDR') {
+          for (const [selector, value] of [['.event-budget', ev.budget], ['.event-expenses', ev.totalExpenses || '0'], ['.event-remaining', absMoney(remaining, currency)]] as const) {
+            const secondary = document.createElement('small'); secondary.className = 'fx-equivalent';
+            secondary.textContent = approximateIdr(value, currency, eventReference(ev));
+            secondary.title = referenceLabel(eventReference(ev), lifecycle.isArchived);
+            clone.querySelector(selector)?.append(secondary);
+          }
+        }
         const countEl = clone.querySelector(".event-participants-count");
         if (countEl) countEl.textContent = `${ev.participantCount || 0} peserta`;
 
@@ -307,7 +327,7 @@ import EventForm from "../components/EventForm.astro";
           }
         }
 
-        grid.appendChild(clone);
+        lifecycleGroups.get(ev.status)?.appendChild(clone);
       });
 
       showEventState("grid");
@@ -359,29 +379,37 @@ import EventForm from "../components/EventForm.astro";
 </Layout>
 
 <style>
-  .center-screen { min-height: 100svh; display: grid; place-items: center; padding: 24px; }
+  .center-screen { min-height: 70svh; display: grid; place-items: center; padding: 24px; }
   .card-sm { width: 100%; max-width: 440px; }
-  .login-panel { width: 100%; max-width: 960px; display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr); padding: 0; overflow: hidden; }
-  .login-intro { padding: 48px; background: var(--bg-surface-variant); }
-  .login-intro h1 { font-size: 28px; color: var(--primary); letter-spacing: -0.3px; }
-  .login-purpose { font-family: var(--font-heading); font-size: 20px; line-height: 1.5; margin: 24px 0 12px; text-wrap: balance; }
-  .login-description { margin: 0; }
-  .login-tasks { margin: 32px 0 0; display: grid; gap: 16px; }
-  .login-tasks div { display: grid; gap: 2px; }
-  .login-tasks dt { font-weight: 600; }
-  .login-tasks dd { margin: 0; color: var(--text-muted); font-size: 13px; }
-  .login-access { padding: 40px; display: flex; flex-direction: column; justify-content: center; align-items: stretch; gap: 16px; }
-  .login-access h2 { font-size: 18px; }
+  .login-screen { padding: 32px 16px 64px; }
+  .login-panel { width: min(100%, 1200px); margin: auto; display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); gap: 64px; align-items: center; }
+  .login-intro { padding: 32px; }
+  .login-intro h1 { font-size: clamp(32px, 4.2vw, 56px); line-height: 1.18; letter-spacing: -.04em; margin: 24px 0; font-weight: 500; }
+  .login-intro h1 span { color: var(--primary); }
+  .login-description { font-size: 18px; max-width: 36ch; color: var(--text-muted-readable); }
+  .login-access { padding: 32px; display: flex; flex-direction: column; align-items: stretch; gap: 16px; background: var(--bg-surface); border-radius: var(--radius-lg); }
+  .login-access h2 { font-size: 24px; font-weight: 500; }
   .login-access p { margin: 0; }
   .login-access :global(.google-button) { margin-top: 8px; }
-  .events-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px; }
+  .gate-ledger { margin-top: 40px; padding: 24px; background: var(--primary-container); color: var(--on-primary-container); border-radius: var(--radius-lg); }
+  .gate-ledger-head { display: flex; flex-wrap: wrap; gap: 12px; justify-content: space-between; padding-bottom: 28px; }
+  .gate-remaining { display: block; font: 500 clamp(28px, 3vw, 40px) var(--font-heading); letter-spacing: -.04em; overflow-wrap: anywhere; }
+  .gate-totals { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 16px; margin: 16px 0 24px; }
+  .gate-totals dt { font-size: 12px; }
+  .gate-totals dd { margin: 4px 0 0; font-weight: 600; }
+  .gate-entry { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 12px; padding-top: 20px; border-top: 1px solid color-mix(in srgb, var(--primary) 25%, transparent); }
+  .gate-entry div { display: flex; flex-direction: column; gap: 4px; }
+  .gate-entry span, .gate-footnote { font-size: 12px; }
+  .gate-footnote { margin: 20px 0 0; }
+  .events-grid { display: flex; flex-direction: column; gap: 48px; }
   .error-container { display: flex; flex-direction: column; align-items: flex-start; gap: 12px; }
-  @media (max-width: 700px) {
-    .center-screen { padding: 20px 16px; }
-    .login-panel { max-width: 480px; grid-template-columns: minmax(0, 1fr); }
-    .login-intro, .login-access { padding: 28px 24px; }
-    .login-purpose { margin-top: 20px; }
-    .login-tasks { margin-top: 24px; gap: 12px; }
-    .events-grid { grid-template-columns: minmax(0, 1fr); gap: 16px; }
+  @media (max-width: 760px) {
+    .login-screen { padding-top: 8px; }
+    .login-panel { grid-template-columns: minmax(0, 1fr); gap: 24px; max-width: 520px; }
+    .login-intro { padding: 16px 0 0; }
+    .login-intro h1 { font-size: clamp(30px, 8vw, 44px); }
+    .login-description { font-size: 16px; }
+    .gate-ledger { margin-top: 24px; padding: 20px; }
+    .login-access { padding: 24px 20px; }
   }
 </style>

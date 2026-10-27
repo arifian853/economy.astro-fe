@@ -1,9 +1,15 @@
-export function formatCurrency(value: number): string {
-  return new Intl.NumberFormat("id-ID", {
-    style: "currency",
-    currency: "IDR",
-    maximumFractionDigits: 0,
-  }).format(value);
+import { toMinor, minorDigits, type Money } from './money';
+
+const symbols: Record<string, string> = { IDR: 'Rp', SGD: 'S$', USD: 'US$', JPY: '¥', MYR: 'RM' };
+export function formatCurrency(value: Money, currency = 'IDR'): string {
+  const amount = toMinor(value, currency);
+  const digits = minorDigits(currency);
+  const absolute = amount < 0n ? -amount : amount;
+  const factor = 10n ** BigInt(digits);
+  const whole = (absolute / factor).toString().replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+  const fraction = digits ? `,${(absolute % factor).toString().padStart(digits, '0')}` : '';
+  const symbol = symbols[currency] ?? new Intl.NumberFormat('id-ID', { style: 'currency', currency }).formatToParts(0).find(part => part.type === 'currency')!.value;
+  return `${amount < 0n ? '-' : ''}${symbol}${/^[A-Z]{3}$/.test(symbol) ? ' ' : ''}${whole}${fraction}`;
 }
 
 export function formatDate(dateStr: string): string {

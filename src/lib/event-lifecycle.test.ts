@@ -25,8 +25,8 @@ describe("event lifecycle presentation", () => {
   });
 
   test("final balances distinguish surplus, even spend, and deficit", () => {
-    expect(getBudgetOutcome(1_000_000, 850_000)).toEqual({ kind: "surplus", amount: 150_000 });
-    expect(getBudgetOutcome(1_000_000, 1_000_000)).toEqual({ kind: "balanced", amount: 0 });
-    expect(getBudgetOutcome(1_000_000, 1_075_000)).toEqual({ kind: "deficit", amount: 75_000 });
+    expect(getBudgetOutcome(1_000_000, 850_000)).toEqual({ kind: "surplus", amount: "150000" });
+    expect(getBudgetOutcome(1_000_000, 1_000_000)).toEqual({ kind: "balanced", amount: "0" });
+    expect(getBudgetOutcome(1_000_000, 1_075_000)).toEqual({ kind: "deficit", amount: "75000" });
   });
 });

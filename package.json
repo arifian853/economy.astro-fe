@@ -10,8 +10,10 @@
     "build": "astro build",
     "preview": "astro preview",
     "check": "astro check",
-    "typecheck": "tsc --noEmit -p tsconfig.json",
-    "astro": "astro"
+    "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.browser.json",
+    "astro": "astro",
+    "test:browser": "playwright test",
+    "build:qa": "PUBLIC_API_URL=/api PUBLIC_SUPABASE_URL=https://auth.economy.test PUBLIC_SUPABASE_ANON_KEY=local-test-anon-key astro build"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.117.3",
@@ -22,6 +24,9 @@
   },
   "devDependencies": {
     "@astrojs/check": "^0.9.10",
+    "@axe-core/playwright": "4.13.0",
+    "@playwright/test": "1.63.0",
+    "@types/node": "24.19.1",
     "typescript": "^5.7.3"
   }
 }

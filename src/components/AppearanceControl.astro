@@ -1,0 +1,20 @@
+---
+import { moods } from '../lib/mood';
+---
+<label class="appearance-control">
+  <span class="appearance-dot" aria-hidden="true"></span>
+  <span class="sr-only">Appearance · Mood</span>
+  <select data-mood-select aria-label="Appearance · Mood">
+    {moods.map(mood => <option value={mood.id}>{mood.name}</option>)}
+  </select>
+</label>
+<script>
+  import { applyMood, resolveMood } from '../lib/mood';
+  document.querySelectorAll<HTMLSelectElement>('[data-mood-select]').forEach(select => {
+    select.value = resolveMood(document.documentElement.dataset.mood ?? null);
+    select.addEventListener('change', () => applyMood(select.value));
+  });
+  window.addEventListener('storage', event => {
+    if (event.key === 'economy-mood') applyMood(resolveMood(event.newValue));
+  });
+</script>

@@ -12,25 +12,29 @@ describe("budget channels", () => {
     expect(calculateBudgetChannels(100000, null, transactions)).toEqual({
       cashBudget: null,
       digitalBudget: null,
-      cashExpenses: 25000,
-      digitalExpenses: 35000,
+      cashExpenses: "25000",
+      digitalExpenses: "35000",
       cashRemaining: null,
       digitalRemaining: null,
-      totalExpenses: 60000,
-      totalRemaining: 40000,
+      totalExpenses: "60000",
+      totalRemaining: "40000",
     });
   });
 
   test("keeps channel budgets equal to total and reports negative channel balance", () => {
     expect(calculateBudgetChannels(100000, 20000, transactions)).toEqual({
-      cashBudget: 20000,
-      digitalBudget: 80000,
-      cashExpenses: 25000,
-      digitalExpenses: 35000,
-      cashRemaining: -5000,
-      digitalRemaining: 45000,
-      totalExpenses: 60000,
-      totalRemaining: 40000,
+      cashBudget: "20000",
+      digitalBudget: "80000",
+      cashExpenses: "25000",
+      digitalExpenses: "35000",
+      cashRemaining: "-5000",
+      digitalRemaining: "45000",
+      totalExpenses: "60000",
+      totalRemaining: "40000",
     });
   });
+});
+
+test('preserves derived accounting beyond safe numeric transport', () => {
+  expect(calculateBudgetChannels(100000, null, [{ quantity: 2, unitPrice: Number.MAX_SAFE_INTEGER, paymentMethod: 'cash' }]).totalExpenses).toBe('18014398509481982');
 });

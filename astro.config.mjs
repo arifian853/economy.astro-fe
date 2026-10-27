@@ -4,6 +4,8 @@ import { defineConfig } from 'astro/config';
 // https://astro.build/config
 export default defineConfig({
   vite: {
+    // QA can run without reading local .env files. Normal development is unchanged.
+    ...(process.env.ECONOMY_ENV_DIR ? { envDir: process.env.ECONOMY_ENV_DIR } : {}),
     server: {
       proxy: {
         '/api': {

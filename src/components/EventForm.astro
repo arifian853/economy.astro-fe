@@ -1,4 +1,5 @@
 ---
+import AppearanceControl from "./AppearanceControl.astro";
 // Komponen Form Modal untuk Tambah dan Edit Event
 ---
 
@@ -9,6 +10,7 @@
       <button type="button" id="btn-close-modal" class="btn btn-ghost btn-sm close-btn" aria-label="Tutup"><svg class="ui-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button>
     </div>
 
+    <AppearanceControl />
     <form id="event-form" class="modal-form" novalidate>
       <input type="hidden" id="event-form-id" value="" />
 
@@ -45,6 +47,23 @@
         </div>
       </div>
 
+      <fieldset class="currency-fields">
+        <legend>Mata uang event</legend>
+        <div class="form-group">
+          <label for="event-currency-mode" class="form-label">Domestic / International</label>
+          <select id="event-currency-mode" class="form-control"><option value="domestic">Domestic · Indonesia (IDR)</option><option value="international">International</option></select>
+        </div>
+        <div id="event-currency-picker" hidden>
+          <label for="event-currency-search" class="form-label">Cari mata uang</label>
+          <input id="event-currency-search" class="form-control" type="search" placeholder="Kode atau nama mata uang" autocomplete="off" aria-controls="event-base-currency" />
+          <label for="event-base-currency" class="form-label">Mata uang utama</label>
+          <select id="event-base-currency" class="form-control" aria-describedby="event-currency-state"></select>
+        </div>
+        <p id="event-currency-state" class="form-hint" role="status">Domestic tetap menggunakan IDR.</p>
+        <button type="button" id="event-currency-retry" class="btn btn-ghost btn-sm" hidden>Muat ulang mata uang</button>
+        <label id="currency-change-confirm" class="form-hint" hidden><input id="currency-change-ack" type="checkbox" /> <span id="currency-change-notice"></span></label>
+      </fieldset>
+
       <div class="form-group">
         <label for="event-input-budget" class="form-label">Total anggaran (Rp) *</label>
         <div class="money-input">
@@ -53,16 +72,16 @@
             type="text"
             id="event-input-budget"
             class="form-control money-control"
-            placeholder="2,000,000…"
+            placeholder="2.000.000"
             required
             inputmode="numeric"
-            pattern="[0-9,]+"
-            maxlength="21"
+            pattern="[0-9.,]+"
+            maxlength="64"
             autocomplete="off"
             aria-describedby="budget-hint"
           />
         </div>
-        <span id="budget-hint" class="form-hint">Koma akan memisahkan ribuan otomatis.</span>
+        <span id="budget-hint" class="form-hint">Nominal rupiah penuh, contoh 2.000.000.</span>
       </div>
 
       <div class="form-group">
@@ -101,11 +120,14 @@
 </dialog>
 
 <script>
+  import { fetchFx } from "../lib/fx-api";
   import { fetchWithAuth } from "../lib/api";
   import type { EventItem, EventDetail } from "../types";
   import { formatLocalDateInput } from "../lib/date";
-  import { formatMoneyInput, formatMoneyInputState, parseMoneyInput } from "../lib/money-input";
+  import { formatMoneyValue, formatMoneyInputState, parseMoneyInput } from "../lib/money-input";
 
+  import { compareMoney, minorDigits } from "../lib/money";
+  import { currencyChangeNotice,  normalizeCurrencies, type CurrencyInfo } from "../lib/fx";
   import { canCloseEventModal } from "../lib/event-modal";
 
   const dialog = document.getElementById("event-form-dialog") as HTMLDialogElement;
@@ -121,16 +143,83 @@
   const errorBox = document.getElementById("event-form-error") as HTMLDivElement;
   const submitBtn = document.getElementById("btn-submit-event") as HTMLButtonElement;
 
-  const formatMoneyField = (input: HTMLInputElement) => {
+  const modeInput = document.getElementById('event-currency-mode') as HTMLSelectElement;
+  const currencyInput = document.getElementById('event-base-currency') as HTMLSelectElement;
+  const currencySearch = document.getElementById('event-currency-search') as HTMLInputElement;
+  const currencyState = document.getElementById('event-currency-state')!;
+  const retryCurrencies = document.getElementById('event-currency-retry')!;
+  const acknowledgment = document.getElementById('currency-change-ack') as HTMLInputElement;
+  let currencies: CurrencyInfo[] = [];
+  let editing: EventDetail['event'] | null = null;
+  let locked = false;
+  let selectedCurrency = 'IDR';
+  let openGeneration = 0;
+  const currency = () => modeInput.value === 'domestic' ? 'IDR' : selectedCurrency;
+  const updateCurrency = () => {
+    document.getElementById('event-currency-picker')!.hidden = modeInput.value !== 'international';
+    modeInput.disabled = locked;
+    currencySearch.disabled = locked || !currencies.length;
+    currencyInput.disabled = locked || !currencies.length;
+    currencyState.textContent = locked ? 'Mata uang terkunci setelah transaksi pertama, termasuk jika transaksi dihapus.'
+      : !currencies.length ? 'Daftar mata uang belum tersedia. Domestic IDR tetap dapat digunakan; mata uang event lama tetap dipertahankan.'
+      : 'Mata uang dapat diubah sebelum transaksi pertama.';
+    const code = currency();
+    const digits = minorDigits(code || 'IDR');
+    const label = document.querySelector('label[for="event-input-budget"]');
+    if (label) label.textContent = `Total anggaran (${code}) *`;
+    document.querySelector('#event-form .money-prefix')!.textContent = code === 'IDR' ? 'Rp' : code;
+    budgetInput.disabled = !!editing || (modeInput.value === 'international' && !currencies.some(item => item.code === code));
+    budgetInput.inputMode = digits ? 'decimal' : 'numeric';
+    budgetInput.placeholder = digits ? '1.000,' + '0'.repeat(digits) : '2.000.000';
+    const hint = document.getElementById('budget-hint');
+    if (hint) hint.textContent = editing ? 'Untuk menjaga riwayat, ubah anggaran lewat panel Penyesuaian Anggaran di halaman event.' : `${code} · ${digits} digit pecahan. Gunakan koma untuk desimal.`;
+    const changed = editing && (code !== (editing.baseCurrency ?? 'IDR') || modeInput.value !== (editing.currencyMode ?? 'domestic'));
+    document.getElementById('currency-change-confirm')!.hidden = !changed;
+    if (changed && editing) {
+      try { document.getElementById('currency-change-notice')!.textContent = currencyChangeNotice(editing, code); }
+      catch { document.getElementById('currency-change-notice')!.textContent = 'Anggaran/alokasi lama tidak dapat dinyatakan dalam pecahan mata uang ini. Pilih mata uang lain.'; }
+    }
+  };
+  const populateCurrencies = () => {
+    currencyInput.replaceChildren();
+    const query = currencySearch.value.trim().toLocaleLowerCase();
+    const filtered = currencies.filter(item => `${item.code} ${item.name}`.toLocaleLowerCase().includes(query) || item.code === selectedCurrency);
+    for (const item of filtered) currencyInput.add(new Option(`${item.code} · ${item.name}`, item.code));
+    if (!currencies.some(item => item.code === selectedCurrency) && editing) currencyInput.add(new Option(`${selectedCurrency} · mata uang tersimpan`, selectedCurrency));
+    currencyInput.value = selectedCurrency;
+  };
+  const loadCurrencies = async () => {
+    retryCurrencies.hidden = true;
+    try { currencies = normalizeCurrencies(await fetchFx('currencies')); }
+    catch { currencies = []; retryCurrencies.hidden = false; }
+    populateCurrencies(); updateCurrency();
+  };
+  currencySearch.addEventListener('input', populateCurrencies);
+  retryCurrencies.addEventListener('click', () => { void loadCurrencies(); });
+  currencyInput.addEventListener('change', () => {
+    selectedCurrency = currencyInput.value;
+    acknowledgment.checked = false;
+    // A newly entered budget must be entered again after a currency switch.
+    if (!editing) budgetInput.value = '';
+    updateCurrency();
+  });
+  modeInput.addEventListener('change', () => {
+    acknowledgment.checked = false;
+    if (!editing) budgetInput.value = '';
+    if (modeInput.value === 'international' && !currencies.some(item => item.code === selectedCurrency)) selectedCurrency = currencies[0]?.code ?? '';
+    populateCurrencies(); updateCurrency();
+  });
+
+  const formatMoneyField = (input: HTMLInputElement, inputType?: string) => {
     const { value, caret } = formatMoneyInputState(
       input.value,
-      input.selectionStart ?? input.value.length,
+      input.selectionStart ?? input.value.length, currency(), inputType,
     );
     input.value = value;
     input.setSelectionRange(caret, caret);
   };
 
-  budgetInput.addEventListener("input", () => formatMoneyField(budgetInput));
+  budgetInput.addEventListener("input", (event) => formatMoneyField(budgetInput, (event as InputEvent).inputType));
 
   const showError = (msg: string) => {
     errorBox.textContent = msg;
@@ -144,6 +233,7 @@
 
   const resetForm = () => {
     form.reset();
+    openGeneration++;
     idInput.value = "";
     hideError();
   };
@@ -168,6 +258,15 @@
     const detail = custom.detail;
     hideError();
     form.reset();
+    const generation = ++openGeneration;
+    editing = null;
+    locked = false;
+    selectedCurrency = detail.event?.baseCurrency ?? 'IDR';
+    modeInput.value = detail.event?.currencyMode ?? 'domestic';
+    currencySearch.value = '';
+    submitBtn.disabled = false;
+    populateCurrencies(); updateCurrency();
+    void loadCurrencies();
 
     if (detail.mode === "create") {
       titleEl.textContent = "Buat Event Baru";
@@ -175,6 +274,9 @@
       // Set default tanggal hari ini
       dateInput.value = formatLocalDateInput(new Date());
       statusInput.value = "upcoming";
+      budgetInput.disabled = false;
+      const budgetHint = document.getElementById("budget-hint");
+      if (budgetHint) budgetHint.textContent = "Nominal rupiah penuh, contoh 2.000.000.";
       submitBtn.textContent = "Buat Event";
       dialog.showModal();
     } else if (detail.mode === "edit" && detail.event) {
@@ -184,10 +286,17 @@
       nameInput.value = ev.name;
       dateInput.value = ev.eventDate;
       statusInput.value = ev.status;
-      budgetInput.value = formatMoneyInput(ev.budget);
+      editing = ev;
+      locked = true; // A fresh owner read decides whether edits are allowed.
+      updateCurrency();
+      budgetInput.value = formatMoneyValue(ev.budget, ev.baseCurrency ?? 'IDR');
+      budgetInput.disabled = true;
+      const budgetHint = document.getElementById("budget-hint");
+      if (budgetHint) budgetHint.textContent = "Untuk menjaga riwayat, ubah anggaran lewat panel Penyesuaian Anggaran di halaman event.";
       notesInput.value = ev.notes || "";
       submitBtn.textContent = "Simpan Perubahan";
-      participantsInput.value = "Memuat peserta…";
+      participantsInput.value = "";
+      submitBtn.disabled = true;
       dialog.showModal();
 
       // Fetch detail event untuk mendapatkan daftar nama peserta
@@ -195,13 +304,19 @@
         const res = await fetchWithAuth(`/events/${ev.id}`);
         if (res.ok) {
           const data: EventDetail = await res.json();
+          if (generation !== openGeneration || !dialog.open) return;
+          editing = data.event;
+          locked = !!data.event.currencyLocked || data.transactions.length > 0 || data.event.status === 'completed';
+          selectedCurrency = data.event.baseCurrency ?? 'IDR';
+          modeInput.value = data.event.currencyMode ?? 'domestic';
+          budgetInput.value = formatMoneyValue(data.event.budget, selectedCurrency);
+          populateCurrencies(); updateCurrency();
+          submitBtn.disabled = data.event.status === 'completed';
           const names = data.participants.map((p) => p.name).join("\n");
           participantsInput.value = names;
-        } else {
-          participantsInput.value = "";
-        }
+        } else { throw Error('Gagal memuat event terbaru. Tutup dan coba lagi.'); }
       } catch {
-        participantsInput.value = "";
+        if (generation === openGeneration && dialog.open) showError('Gagal memuat event terbaru. Tutup dan coba lagi.');
       }
     }
   });
@@ -213,7 +328,7 @@
 
     const name = nameInput.value.trim();
     const eventDate = dateInput.value;
-    const budget = parseMoneyInput(budgetInput.value);
+    const budget = parseMoneyInput(budgetInput.value, currency());
     const status = statusInput.value as "upcoming" | "active";
     const notes = notesInput.value.trim() || null;
     const isEdit = !!idInput.value;
@@ -237,8 +352,8 @@
       return;
     }
 
-    if (budget === null || budget <= 0) {
-      showError("Anggaran harus berupa nominal rupiah lebih dari 0.");
+    if (!isEdit && (budget === null || compareMoney(budget, "0", currency()) <= 0)) {
+      showError("Anggaran harus sesuai pecahan mata uang dan lebih dari 0.");
       budgetInput.focus();
       return;
     }
@@ -249,6 +364,15 @@
       return;
     }
 
+    const changed = editing && (currency() !== (editing.baseCurrency ?? 'IDR') || modeInput.value !== (editing.currencyMode ?? 'domestic'));
+    if (modeInput.value === 'international' && (!editing || changed) && !currencies.some(item => item.code === currency())) {
+      showError('Pilih mata uang dari daftar API yang tersedia.'); return;
+    }
+    if (changed && editing) {
+      try { currencyChangeNotice(editing, currency()); }
+      catch { showError('Anggaran/alokasi lama tidak sesuai pecahan mata uang baru.'); return; }
+      if (locked || !acknowledgment.checked) { showError('Setujui perubahan nominal anggaran dan alokasi terlebih dahulu.'); return; }
+    }
     form.setAttribute("aria-busy", "true");
     submitBtn.disabled = true;
     submitBtn.textContent = isEdit ? "Menyimpan…" : "Membuat…";
@@ -257,7 +381,8 @@
       const payload = {
         name,
         eventDate,
-        budget,
+        budget: isEdit ? undefined : budget,
+        ...(!isEdit || changed ? { currencyMode: modeInput.value, baseCurrency: currency() } : {}),
         status,
         notes,
         participants: rawParticipants,
@@ -273,6 +398,10 @@
 
       if (!res.ok) {
         const errData = await res.json().catch(() => ({}));
+        if (res.status === 409) {
+          // Keep entered data and display the conflict. Reopening reads fresh owner state.
+          locked = true; updateCurrency();
+        }
         throw new Error(errData.error || `Gagal menyimpan event (status ${res.status})`);
       }
 
@@ -280,6 +409,7 @@
       closeModal("form-submit");
       // Memicu refresh daftar event di index.astro
       window.dispatchEvent(new CustomEvent("refresh-events"));
+      window.dispatchEvent(new CustomEvent("refresh-event-detail"));
     } catch (err: any) {
       showError(err.message || "Terjadi kesalahan saat menyimpan event.");
     } finally {

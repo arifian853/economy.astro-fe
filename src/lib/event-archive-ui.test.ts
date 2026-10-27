@@ -18,7 +18,7 @@ describe("event archive UI integration", () => {
     expect(eventPage).toContain("getEventLifecycleView(event.status)");
     expect(eventPage).toContain("canEditLedger");
     expect(eventPage).toContain("btn-add-transaction");
-    expect(eventPage).toContain("transaction-actions-header");
+    expect(eventPage).toContain("tdActions.hidden = !lifecycle.canEditLedger");
   });
 
   test("the completed event has a final budget and spending report", () => {

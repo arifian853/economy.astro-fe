@@ -1,47 +1,40 @@
+import { multiplyMoney, sumMoney, subtractMoney, fromMinor, toMinor, type Money } from './money';
 export type BudgetChannelTransaction = {
   quantity: number;
-  unitPrice: number;
+  unitPrice: Money;
   paymentMethod: string;
 };
 
 export type BudgetChannelSummary = {
-  cashBudget: number | null;
-  digitalBudget: number | null;
-  cashExpenses: number;
-  digitalExpenses: number;
-  cashRemaining: number | null;
-  digitalRemaining: number | null;
-  totalExpenses: number;
-  totalRemaining: number;
+  cashBudget: Money | null;
+  digitalBudget: Money | null;
+  cashExpenses: Money;
+  digitalExpenses: Money;
+  cashRemaining: Money | null;
+  digitalRemaining: Money | null;
+  totalExpenses: Money;
+  totalRemaining: Money;
 };
 
 export function calculateBudgetChannels(
-  budget: number,
-  cashBudget: number | null,
+  budget: Money,
+  cashBudget: Money | null,
   transactions: BudgetChannelTransaction[],
+  currency = 'IDR',
 ): BudgetChannelSummary {
-  const totals = transactions.reduce(
-    (sum, tx) => {
-      const amount = tx.quantity * tx.unitPrice;
-      sum.totalExpenses += amount;
-      if (tx.paymentMethod === "cash") sum.cashExpenses += amount;
-      else sum.digitalExpenses += amount;
-      return sum;
-    },
-    { totalExpenses: 0, cashExpenses: 0, digitalExpenses: 0 },
-  );
-
-  const splitConfigured = cashBudget !== null;
-  const digitalBudget = splitConfigured ? budget - cashBudget : null;
-
+  const expenses = transactions.map(tx => ({ amount: multiplyMoney(tx.unitPrice, tx.quantity, currency), cash: tx.paymentMethod === 'cash' }));
+  const totalExpenses = sumMoney(expenses.map(tx => tx.amount), currency);
+  const cashExpenses = sumMoney(expenses.filter(tx => tx.cash).map(tx => tx.amount), currency);
+  const digitalExpenses = sumMoney(expenses.filter(tx => !tx.cash).map(tx => tx.amount), currency);
+  const digitalBudget = cashBudget === null ? null : subtractMoney(budget, cashBudget, currency);
   return {
-    cashBudget,
+    cashBudget: cashBudget === null ? null : fromMinor(toMinor(cashBudget, currency), currency),
     digitalBudget,
-    cashExpenses: totals.cashExpenses,
-    digitalExpenses: totals.digitalExpenses,
-    cashRemaining: splitConfigured ? cashBudget - totals.cashExpenses : null,
-    digitalRemaining: splitConfigured ? digitalBudget! - totals.digitalExpenses : null,
-    totalExpenses: totals.totalExpenses,
-    totalRemaining: budget - totals.totalExpenses,
+    cashExpenses,
+    digitalExpenses,
+    cashRemaining: cashBudget === null ? null : subtractMoney(cashBudget, cashExpenses, currency),
+    digitalRemaining: digitalBudget === null ? null : subtractMoney(digitalBudget, digitalExpenses, currency),
+    totalExpenses,
+    totalRemaining: subtractMoney(budget, totalExpenses, currency),
   };
 }

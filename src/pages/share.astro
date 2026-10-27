@@ -1,14 +1,10 @@
 ---
+import FxContext from "../components/FxContext.astro";
 import Layout from "../layouts/Layout.astro";
 ---
 
 <Layout title="Ringkasan event — Economy">
-  <main class="public-ledger-page">
-    <header class="public-ledger-nav">
-      <a href="/" class="public-ledger-brand" aria-label="Economy, kembali ke beranda">Economy</a>
-      <span class="public-nav-caption">Ringkasan event</span>
-    </header>
-
+  <main id="main-content" class="public-ledger-page">
     <section id="public-loading" class="public-state-card" role="status">
       <span class="public-state-mark" aria-hidden="true">…</span>
       <div>
@@ -28,7 +24,9 @@ import Layout from "../layouts/Layout.astro";
     <div id="public-content" hidden>
       <section class="public-event-hero" aria-labelledby="public-event-name">
         <div>
-          <p class="public-page-kicker">Ringkasan keuangan</p>
+          <p id="public-statement-label" class="public-page-kicker">Live Ledger</p>
+          <p id="public-live-state" class="public-live-state" role="status" aria-live="polite">Menghubungkan…</p>
+          <p id="public-updated" class="public-updated"></p>
           <h1 id="public-event-name"></h1>
           <p class="public-event-date"><time id="public-event-date"></time></p>
         </div>
@@ -37,12 +35,17 @@ import Layout from "../layouts/Layout.astro";
 
       <section class="public-overview" aria-label="Ringkasan anggaran">
         <article class="public-total-remaining-card">
-          <span class="public-stat-label">Sisa anggaran</span>
+          <span id="public-outcome-label" class="public-stat-label">Sisa anggaran</span>
           <strong id="public-total-remaining" class="public-total-value">—</strong>
           <span id="public-remaining-caption" class="public-stat-caption">Setelah seluruh pengeluaran</span>
         </article>
+        <article id="public-initial-row" class="public-stat-card" hidden>
+          <span class="public-stat-label">Anggaran awal</span>
+          <strong id="public-initial-budget" class="public-stat-value"></strong>
+        </article>
+        <p id="public-initial-unavailable" class="public-stat-caption" hidden></p>
         <article class="public-stat-card">
-          <span class="public-stat-label">Anggaran total</span>
+          <span id="public-budget-label" class="public-stat-label">Anggaran total</span>
           <strong id="public-total-budget" class="public-stat-value">—</strong>
           <span class="public-stat-caption">Dana event</span>
         </article>
@@ -51,9 +54,11 @@ import Layout from "../layouts/Layout.astro";
           <strong id="public-total-expenses" class="public-stat-value">—</strong>
           <span id="public-entry-count" class="public-stat-caption">0 transaksi</span>
         </article>
+        <p id="public-fx-state" class="form-hint" hidden></p>
       </section>
 
       <section class="public-channel-section" aria-labelledby="public-channel-title">
+        <FxContext />
         <div class="public-section-heading">
           <div>
             <p class="public-page-kicker">Sumber dana</p>
@@ -101,8 +106,13 @@ import Layout from "../layouts/Layout.astro";
   </main>
 
   <script>
+    import { eventReference, approximateIdr, referenceLabel } from "../lib/fx";
+    import { compareMoney, type Money } from "../lib/money";
     import { parsePublicShareToken } from "../lib/public-share";
+    import { formatCurrency } from "../lib/currency";
+    import { createPublicPoller } from "../lib/public-polling";
     import { normalizePublicEvent } from "../lib/public-view";
+    import { initialBudgetStatement } from "../lib/final-statement";
 
     const loading = document.getElementById("public-loading");
     const error = document.getElementById("public-error");
@@ -117,10 +127,20 @@ import Layout from "../layouts/Layout.astro";
     const emptyState = document.getElementById("public-empty");
     const splitNote = document.getElementById("public-split-note");
     const apiBase = (import.meta.env.PUBLIC_API_URL || "/api").replace(/\/$/, "");
-    const formatMoney = (amount: number) => new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 }).format(amount);
-    const setMoney = (id: string, amount: number | null) => {
+    let currency = 'IDR';
+    let currentEvent: NonNullable<ReturnType<typeof normalizePublicEvent>>['event'] = { name: '', eventDate: '' };
+    const formatMoney = (amount: Money) => formatCurrency(amount, currency);
+    const setMoney = (id: string, amount: Money | null) => {
       const element = document.getElementById(id);
-      if (element) element.textContent = amount === null ? "Belum dibagi" : formatMoney(amount);
+      if (element) {
+        element.textContent = amount === null ? "Belum dibagi" : formatMoney(amount);
+        if (amount !== null && currency !== 'IDR') {
+          const secondary = document.createElement('small'); secondary.className = 'fx-equivalent';
+          secondary.textContent = approximateIdr(amount, currency, eventReference(currentEvent));
+          secondary.title = referenceLabel(eventReference(currentEvent), currentEvent.status === 'completed');
+          element.append(secondary);
+        }
+      }
     };
 
     const showFailure = (message: string) => {
@@ -130,15 +150,26 @@ import Layout from "../layouts/Layout.astro";
       if (error) error.hidden = false;
     };
 
+    const rows = new Map<string, HTMLLIElement>();
+    let renderedOnce = false;
     const renderEntries = (entries: NonNullable<ReturnType<typeof normalizePublicEvent>>["entries"]) => {
       if (!entryList || !entryCount || !entryCountList || !emptyState || !ledger) return;
-      entryList.replaceChildren();
+      const ordered: HTMLLIElement[] = [];
+      const occurrences = new Map<string, number>();
+      const activeKeys = new Set<string>();
       ledger.hidden = false;
       entryCount.textContent = `${entries.length} transaksi`;
       entryCountList.textContent = `${entries.length} transaksi`;
       emptyState.hidden = entries.length > 0;
 
       for (const entry of entries) {
+        const signature = JSON.stringify([entry, currency, currentEvent.status === 'completed']);
+        const occurrence = occurrences.get(signature) ?? 0;
+        occurrences.set(signature, occurrence + 1);
+        const key = `${signature}:${occurrence}`;
+        activeKeys.add(key);
+        const existing = rows.get(key);
+        if (existing) { ordered.push(existing); continue; }
         const row = document.createElement("li");
         row.className = "public-entry-row";
         const marker = document.createElement("span");
@@ -164,9 +195,22 @@ import Layout from "../layouts/Layout.astro";
         const amount = document.createElement("strong");
         amount.className = "public-entry-amount";
         amount.textContent = `− ${formatMoney(entry.amount)}`;
+        if (currency !== 'IDR') {
+          const secondary = document.createElement('small'); secondary.className = 'fx-equivalent';
+          secondary.textContent = entry.idrEquivalent == null ? 'Referensi IDR tidak tersedia' : `≈ ${formatCurrency(entry.idrEquivalent)}`;
+          secondary.title = `Snapshot transaksi · ${referenceLabel({ rate: entry.fxRateToIdr ?? null, date: entry.fxRateDate ?? null, provider: entry.fxRateProvider ?? null }, currentEvent.status === 'completed')}`;
+          const provenance = document.createElement('p'); provenance.className = 'form-hint'; provenance.textContent = secondary.title;
+          detail.append(provenance); amount.append(secondary);
+        }
         row.append(marker, detail, amount);
-        entryList.append(row);
+        if (renderedOnce) row.classList.add('ledger-new-entry');
+        rows.set(key, row);
+        ordered.push(row);
       }
+      rows.forEach((_row, key) => { if (!activeKeys.has(key)) rows.delete(key); });
+      // Reuse existing nodes so disclosure state and scroll position remain stable.
+      entryList.replaceChildren(...ordered);
+      renderedOnce = true;
     };
 
     const renderBudget = (summary: NonNullable<ReturnType<typeof normalizePublicEvent>>["budgetSummary"], entryTotal: number) => {
@@ -185,78 +229,108 @@ import Layout from "../layouts/Layout.astro";
         splitNote.textContent = "Pembagian anggaran kas dan digital belum diatur.";
       }
       const caption = document.getElementById("public-remaining-caption");
-      if (caption) caption.textContent = summary.totalRemaining < 0 ? "Pengeluaran melebihi anggaran" : "Setelah seluruh pengeluaran";
+      if (caption) caption.textContent = compareMoney(summary.totalRemaining, '0', currency) < 0 ? "Pengeluaran melebihi anggaran" : "Setelah seluruh pengeluaran";
+      const outcomeLabel = document.getElementById('public-outcome-label');
+      if (outcomeLabel) outcomeLabel.textContent = compareMoney(summary.totalRemaining, '0', currency) < 0 ? 'Defisit anggaran' : 'Sisa anggaran';
     };
 
-    const loadPublicEvent = async (token: string) => {
-      try {
-        const response = await fetch(`${apiBase}/public/events`, {
-          method: "GET",
-          headers: { "X-Economy-Share-Token": token },
-          credentials: "omit",
-          cache: "no-store",
-          redirect: "error",
-        });
-        if (!response.ok) {
-          showFailure(response.status === 404
-            ? "Tautan tidak valid atau sudah dinonaktifkan."
-            : "Ringkasan event sementara tidak dapat dimuat.");
-          return;
-        }
-        const view = normalizePublicEvent(await response.json());
-        if (!view) {
-          showFailure("Data ringkasan tidak lengkap atau tidak valid.");
-          return;
-        }
-        if (loading) loading.hidden = true;
-        if (error) error.hidden = true;
-        if (content) content.hidden = false;
-        if (eventName) eventName.textContent = view.event.name;
-        document.title = `${view.event.name} — Economy`;
-        if (eventDate) {
-          eventDate.dateTime = view.event.eventDate;
-          const parsedDate = new Date(`${view.event.eventDate}T00:00:00+07:00`);
-          eventDate.textContent = Number.isNaN(parsedDate.getTime())
-            ? view.event.eventDate
-            : new Intl.DateTimeFormat("id-ID", { dateStyle: "long", timeZone: "Asia/Jakarta" }).format(parsedDate);
-        }
-        renderBudget(view.budgetSummary, view.entries.length);
-        renderEntries(view.entries);
-      } catch {
-        showFailure("Ringkasan event sementara tidak dapat dimuat. Periksa koneksi lalu coba lagi.");
+    let previous: ReturnType<typeof normalizePublicEvent> = null;
+    let lastReceived = '';
+    const render = (view: NonNullable<typeof previous>) => {
+      const metadataChanged = JSON.stringify(previous?.event) !== JSON.stringify(view.event);
+      currentEvent = view.event;
+      currency = view.event.baseCurrency ?? 'IDR';
+      const completed = view.event.status === 'completed';
+      const initial = initialBudgetStatement(view.event, currency);
+      const initialRow = document.getElementById('public-initial-row');
+      if (initialRow) initialRow.hidden = !completed || initial.amount === null;
+      setMoney('public-initial-budget', initial.amount);
+      // Clear hidden values too, so a known→unknown update cannot retain an old claim.
+      if (initial.amount === null) document.getElementById('public-initial-budget')?.replaceChildren();
+      const initialUnavailable = document.getElementById('public-initial-unavailable');
+      if (initialUnavailable) {
+        initialUnavailable.hidden = !completed || initial.unavailable === null;
+        initialUnavailable.textContent = completed ? initial.unavailable ?? '' : '';
       }
+      const budgetLabel = document.getElementById('public-budget-label');
+      if (budgetLabel) budgetLabel.textContent = completed ? 'Anggaran akhir' : 'Anggaran total';
+      if (previous?.event.baseCurrency !== view.event.baseCurrency) rows.clear();
+      document.querySelector('.public-hero-mark')!.textContent = currency === 'IDR' ? 'Rp' : currency;
+      const fxState = document.getElementById('public-fx-state');
+      if (fxState) { fxState.hidden = currency === 'IDR'; fxState.textContent = referenceLabel(eventReference(view.event), view.event.status === 'completed'); }
+      if (metadataChanged) window.dispatchEvent(new CustomEvent('update-fx-context', { detail: view.event }));
+      if (loading) loading.hidden = true;
+      if (error) error.hidden = true;
+      if (content) content.hidden = false;
+      if (eventName && eventName.textContent !== view.event.name) eventName.textContent = view.event.name;
+      document.title = `${view.event.name} — Economy`;
+      if (eventDate && eventDate.dateTime !== view.event.eventDate) {
+        eventDate.dateTime = view.event.eventDate;
+        const date = new Date(`${view.event.eventDate}T00:00:00+07:00`);
+        eventDate.textContent = Number.isNaN(date.getTime()) ? view.event.eventDate : new Intl.DateTimeFormat('id-ID', { dateStyle: 'long', timeZone: 'Asia/Jakarta' }).format(date);
+      }
+      if (metadataChanged || JSON.stringify(previous?.budgetSummary) !== JSON.stringify(view.budgetSummary)) renderBudget(view.budgetSummary, view.entries.length);
+      if (metadataChanged || JSON.stringify(previous?.entries) !== JSON.stringify(view.entries)) renderEntries(view.entries);
+      const label = document.getElementById('public-statement-label');
+      if (label) label.textContent = view.event.status === 'completed' ? 'Final Statement' : 'Live Ledger';
+      if (content) content.dataset.status = view.event.status ?? 'unknown';
+      previous = view;
     };
-
     const token = parsePublicShareToken(window.location.hash);
-    if (!token) showFailure("Tautan tidak valid atau sudah dinonaktifkan.");
-    else void loadPublicEvent(token);
+    if (!token) showFailure('Tautan tidak valid atau sudah dinonaktifkan.');
+    else {
+      const poller = createPublicPoller({
+        endpoint: `${apiBase}/public/events`, token, onData: render,
+        onState: state => {
+          if (state === 'unavailable') { previous = null; rows.clear(); entryList?.replaceChildren(); window.dispatchEvent(new CustomEvent('update-fx-context', { detail: {} })); showFailure('Tautan tidak valid atau sudah dinonaktifkan.'); }
+          const indicator = document.getElementById('public-live-state');
+          const labels = { loading: 'Menghubungkan…', live: 'Live · diperbarui otomatis', final: 'Final · event selesai', paused: 'Pembaruan dijeda', unavailable: 'Tautan tidak tersedia' };
+          if (indicator && indicator.textContent !== labels[state]) indicator.textContent = labels[state];
+          if (state === 'live' || state === 'final') {
+            lastReceived = new Intl.DateTimeFormat('id-ID', { timeStyle: 'short', timeZone: 'Asia/Jakarta' }).format(new Date());
+          }
+          const updated = document.getElementById('public-updated');
+          if (updated) updated.textContent = previous?.event.updatedAt
+            ? `Data diperbarui ${new Intl.DateTimeFormat('id-ID', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Asia/Jakarta' }).format(new Date(previous.event.updatedAt))}`
+            : lastReceived ? `Terakhir diperiksa ${lastReceived} WIB · status event belum tersedia` : '';
+          if (state === 'paused' && !previous) {
+            if (loading) loading.hidden = true;
+            if (errorMessage) errorMessage.textContent = 'Koneksi terputus. Mencoba menghubungkan kembali secara otomatis…';
+            if (error) error.hidden = false;
+          }
+        },
+      });
+      poller.start();
+      window.addEventListener('pagehide', () => poller.stop());
+      window.addEventListener('pageshow', event => { if (event.persisted) poller.start(); });
+    }
   </script>
 
   <style>
     .public-ledger-page { width: min(100% - 32px, 1040px); margin: 0 auto; padding: 24px 0 56px; color: var(--text-main); }
     .public-ledger-nav { display: flex; justify-content: space-between; align-items: center; margin-bottom: 26px; }
     .public-ledger-brand { color: var(--primary); font-family: var(--font-heading); font-size: 1.25rem; font-weight: 700; text-decoration: none; }
-    .public-nav-caption, .public-section-note { color: var(--text-muted); font-size: .875rem; }
+    .public-nav-caption, .public-section-note { color: var(--text-muted-readable); font-size: .875rem; }
     .public-state-card, .public-event-hero, .public-channel-section, .public-ledger-section { border: 1px solid var(--border-subtle); border-radius: var(--radius-md); background: var(--bg-surface); }
     .public-state-card { display: flex; gap: 16px; align-items: flex-start; padding: 22px; margin: 0 auto; max-width: 650px; }
     .public-state-card h1, .public-state-card p { margin: 0; }
     .public-state-card h1 { margin-bottom: 5px; font-size: 1.05rem; }
-    .public-state-card p { color: var(--text-muted); }
+    .public-state-card p { color: var(--text-muted-readable); }
     .public-state-mark { width: 32px; height: 32px; border-radius: 50%; display: grid; place-items: center; background: var(--bg-surface-variant); color: var(--primary); font-weight: 700; }
     .public-error-card .public-state-mark { color: var(--status-error-text); background: var(--status-error-bg); }
     .public-event-hero { display: flex; justify-content: space-between; align-items: center; gap: 24px; padding: 28px 32px; margin-bottom: 16px; background: var(--bg-surface-variant); }
     .public-page-kicker { margin: 0 0 8px; color: var(--primary); font-size: .76rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
     .public-event-hero h1 { margin: 0; font: 700 clamp(1.6rem, 4vw, 2.35rem)/1.15 var(--font-heading); }
-    .public-event-date { margin: 8px 0 0; color: var(--text-muted); }
+    .public-event-date { margin: 8px 0 0; color: var(--text-muted-readable); }
     .public-hero-mark { display: grid; place-items: center; width: 58px; height: 58px; flex: 0 0 auto; border: 1px solid var(--border-subtle); border-radius: 50%; color: var(--primary); font: 600 1rem var(--font-mono); }
     .public-overview { display: grid; grid-template-columns: 1.35fr 1fr 1fr; gap: 12px; margin-bottom: 16px; }
     .public-total-remaining-card, .public-stat-card { display: flex; flex-direction: column; justify-content: center; min-height: 128px; padding: 20px 22px; border: 1px solid var(--border-subtle); border-radius: var(--radius-md); background: var(--bg-surface); }
-    .public-total-remaining-card { background: #d8e4d4; border-color: #a7b8a3; }
-    .public-stat-label { margin-bottom: 10px; color: var(--text-muted); font-size: .82rem; font-weight: 600; }
-    .public-total-remaining-card .public-stat-label, .public-total-remaining-card .public-stat-caption { color: #354d37; }
-    .public-total-value, .public-stat-value { font: 600 clamp(1.15rem, 2.4vw, 1.65rem)/1.2 var(--font-mono); overflow-wrap: anywhere; }
-    .public-total-value { color: #2e5034; font-size: clamp(1.4rem, 3vw, 2rem); }
-    .public-stat-caption { margin-top: 8px; color: var(--text-muted); font-size: .78rem; }
+    .public-total-remaining-card { background: var(--primary-container); border-color: var(--border-subtle); }
+    .public-stat-label { margin-bottom: 10px; color: var(--text-muted-readable); font-size: .82rem; font-weight: 600; }
+    .public-total-remaining-card .public-stat-label, .public-total-remaining-card .public-stat-caption { color: var(--on-primary-container); }
+    .public-total-value, .public-stat-value { font: 500 clamp(1.15rem, 2.4vw, 1.65rem)/1.2 var(--font-heading); overflow-wrap: anywhere; }
+    .public-total-value { color: var(--on-primary-container); font-size: clamp(1.4rem, 3vw, 2rem); }
+    .public-stat-caption { margin-top: 8px; color: var(--text-muted-readable); font-size: .78rem; }
     .public-channel-section { padding: 22px; margin-bottom: 16px; }
     .public-section-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 16px; }
     .public-section-heading .public-page-kicker { margin-bottom: 4px; }
@@ -266,27 +340,27 @@ import Layout from "../layouts/Layout.astro";
     .public-channel-heading { display: flex; align-items: center; gap: 9px; margin-bottom: 12px; }
     .public-channel-heading h3 { margin: 0; font: 600 .98rem var(--font-heading); }
     .public-channel-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--primary); }
-    .digital-dot { background: #708b72; }
+    .digital-dot { background: var(--secondary); }
     .public-channel-card dl { display: grid; gap: 0; margin: 0; }
     .public-channel-card dl > div { display: flex; justify-content: space-between; gap: 12px; padding: 10px 0; border-top: 1px solid var(--border-subtle); }
-    .public-channel-card dt { color: var(--text-muted); font-size: .86rem; }
+    .public-channel-card dt { color: var(--text-muted-readable); font-size: .86rem; }
     .public-channel-card dd { margin: 0; text-align: right; font: 500 .88rem var(--font-mono); }
     .public-channel-card .public-channel-balance dd { color: var(--primary); font-weight: 700; }
-    .public-split-note { margin: 13px 0 0; color: var(--text-muted); font-size: .82rem; }
+    .public-split-note { margin: 13px 0 0; color: var(--text-muted-readable); font-size: .82rem; }
     .public-ledger-section { overflow: hidden; }
     .public-ledger-section-head { padding: 22px 22px 14px; }
     .public-entry-list { list-style: none; margin: 0; padding: 0 22px 10px; }
     .public-entry-row { display: grid; grid-template-columns: 34px minmax(0, 1fr) auto; align-items: center; gap: 12px; padding: 16px 0; border-top: 1px solid var(--border-subtle); }
-    .public-entry-marker { width: 30px; height: 30px; display: grid; place-items: center; border: 1px solid var(--border-subtle); border-radius: 50%; color: var(--text-muted); }
+    .public-entry-marker { width: 30px; height: 30px; display: grid; place-items: center; border: 1px solid var(--border-subtle); border-radius: 50%; color: var(--text-muted-readable); }
     .public-entry-detail { min-width: 0; }
-    .public-entry-kind { color: var(--text-muted); font-size: .72rem; }
+    .public-entry-kind { color: var(--text-muted-readable); font-size: .72rem; }
     .public-entry-name { margin: 3px 0; font-size: .96rem; overflow-wrap: anywhere; }
-    .public-entry-time { color: var(--text-muted); font-size: .76rem; }
-    .public-entry-amount { white-space: nowrap; font: 600 .9rem var(--font-mono); }
+    .public-entry-time { color: var(--text-muted-readable); font-size: .76rem; }
+    .public-entry-amount { overflow-wrap: anywhere; font: 500 1rem var(--font-heading); }
     .public-empty-state { padding: 26px 20px 32px; text-align: center; }
     .public-empty-mark { color: var(--primary); font: 600 1.5rem var(--font-mono); }
     .public-empty-state h3 { margin: 8px 0 3px; font: 600 1rem var(--font-heading); }
-    .public-empty-state p { margin: 0; color: var(--text-muted); font-size: .86rem; }
+    .public-empty-state p { margin: 0; color: var(--text-muted-readable); font-size: .86rem; }
     [hidden] { display: none !important; }
     @media (max-width: 650px) {
       .public-ledger-page { width: min(100% - 24px, 1040px); padding-top: 16px; }
@@ -302,6 +376,35 @@ import Layout from "../layouts/Layout.astro";
       .public-ledger-section-head { padding-right: 16px; padding-left: 16px; }
       .public-entry-row { grid-template-columns: 30px minmax(0, 1fr); gap: 10px; }
       .public-entry-amount { grid-column: 2; }
+    }
+    #public-content { display: grid; grid-template-columns: minmax(0, 1.8fr) minmax(0, 1fr); gap: 24px; align-items: start; }
+    .public-event-hero, .public-overview { grid-column: 1 / -1; }
+    .public-event-hero { border: 0; background: transparent; padding: 0; margin: 0; }
+    .public-event-hero > div { min-width: 0; }
+    .public-event-hero h1 { overflow-wrap: anywhere; font-weight: 500; }
+    .public-live-state { font-size: 13px; color: var(--primary); margin: 0 0 8px; }
+    .public-updated { font-size: 12px; color: var(--text-muted-readable); margin: 0 0 16px; }
+    .public-overview { margin: 0; grid-template-columns: 1fr 1fr; gap: 0; border-radius: var(--radius-lg); background: var(--primary-container); padding: 24px; }
+    .public-total-remaining-card { grid-column: 1 / -1; min-height: 120px; padding: 0; border: 0; }
+    .public-total-value { font-size: clamp(30px, 5vw, 56px); letter-spacing: -.04em; }
+    .public-stat-card { background: transparent; border: 0; min-height: auto; padding: 24px 0 0; }
+    .public-stat-card .public-stat-label, .public-stat-card .public-stat-caption, .public-stat-card .public-stat-value { color: var(--on-primary-container); }
+    .public-channel-section { grid-column: 2; grid-row: 3; border: 0; background: var(--bg-surface-variant); padding: 20px; }
+    .public-channel-grid { grid-template-columns: 1fr; }
+    .public-ledger-section { grid-column: 1; grid-row: 3; border: 0; background: transparent; padding: 0; }
+    .public-entry-list { padding: 0; }
+    .public-ledger-section-head { padding: 22px 22px 14px; }
+    .public-entry-row { grid-template-columns: 30px minmax(0, 1fr); }
+    .public-entry-amount { grid-column: 2; text-align: start; white-space: normal; overflow-wrap: anywhere; }
+    .public-channel-card dd { overflow-wrap: anywhere; min-width: 0; font-family: var(--font-body); font-variant-numeric: tabular-nums; }
+    .ledger-new-entry { animation: ledger-enter 260ms ease-out; }
+    @keyframes ledger-enter { from { opacity: 0; transform: translateY(6px); background: var(--primary-container); } to { opacity: 1; transform: translateY(0); } }
+    @media (max-width: 760px) {
+      #public-content { grid-template-columns: minmax(0, 1fr); }
+      .public-ledger-section { grid-row: 3; }
+      .public-channel-section { grid-column: 1; grid-row: 4; }
+      .public-overview { padding: 24px 20px; }
+      .public-stat-card { min-width: 0; padding-right: 8px; }
     }
   </style>
 </Layout>

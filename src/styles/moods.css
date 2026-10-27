@@ -1,0 +1,153 @@
+/* Canonical mood values from Bookshelf DESIGN.md (commit 9cb76d4d2d6e73a7e84753a306813fbd3b0977df). */
+:root, [data-mood="teal"] {
+--bg-main:#F3F8F7; --bg-surface:#FFFFFF; --bg-surface-variant:#E5F0EE; --bg-surface-hover:#D9E9E6;
+--primary:#3F6B67; --primary-hover:#345B57; --primary-container:#D5E7E4; --on-primary-container:#1F3835;
+--secondary:#687A77; --secondary-container:#E5ECEB; --on-secondary-container:#303D3B;
+--text-main:#22302F; --text-muted:#5D6E6C; --text-light:#83918F;
+--border-subtle:#D7E4E1; --border-active:#3F6B67;
+
+--status-pending-text:#7B5D18; --status-pending-bg:#F8F1DD;
+--status-info-text:#3D7080; --status-info-bg:#E7F2F4;
+--status-success-text:#3F7653; --status-success-bg:#E5F1E8;
+--status-error-text:#A64545; --status-error-bg:#F7E9E9;
+--status-available-text:#3F7653; --status-available-bg:#E4F1E7;
+--status-unavailable-text:#A64B4B; --status-unavailable-bg:#F6E8E8;
+
+--priority-high-text:#913D3D; --priority-high-bg:#F5E5E5;
+--priority-normal-text:#303D3B; --priority-normal-bg:#E5ECEB;
+--priority-low-text:#526460; --priority-low-bg:#E4ECEA;
+  color-scheme: light;
+}
+[data-mood="forest"] {
+--bg-main:#F4F7F1; --bg-surface:#FFFFFF; --bg-surface-variant:#EAF0E6; --bg-surface-hover:#E0E9DC;
+--primary:#49644B; --primary-hover:#3C563E; --primary-container:#DDE9D8; --on-primary-container:#223524;
+--secondary:#6D7868; --secondary-container:#E7ECE4; --on-secondary-container:#323B30;
+--text-main:#253025; --text-muted:#636E61; --text-light:#7F8B7D;
+--border-subtle:#DCE4D8; --border-active:#49644B;
+
+--status-pending-text:#80621A; --status-pending-bg:#F8F2DD;
+--status-info-text:#3F6F84; --status-info-bg:#E9F2F4;
+--status-success-text:#3F7450; --status-success-bg:#E7F1E8;
+--status-error-text:#A9433F; --status-error-bg:#F7E9E7;
+--status-available-text:#3F7450; --status-available-bg:#E6F1E7;
+--status-unavailable-text:#A64C48; --status-unavailable-bg:#F6E8E6;
+
+--priority-high-text:#913936; --priority-high-bg:#F6E5E3;
+--priority-normal-text:#323B30; --priority-normal-bg:#E7ECE4;
+--priority-low-text:#536052; --priority-low-bg:#E8EDE7;
+  color-scheme: light;
+}
+[data-mood="beige"] {
+--bg-main:#FAF8F5; --bg-surface:#FFFFFF; --bg-surface-variant:#F4EFEA; --bg-surface-hover:#ECE4DC;
+--primary:#6B5040; --primary-hover:#574032; --primary-container:#EDE3DA; --on-primary-container:#332317;
+--secondary:#7D6B5D; --secondary-container:#EFE8E1; --on-secondary-container:#362D26;
+--text-main:#2A231F; --text-muted:#766961; --text-light:#A4978E;
+--border-subtle:#E8E0D7; --border-active:#6B5040;
+
+--status-pending-text:#8C6D1F; --status-pending-bg:#FEF7E6;
+--status-info-text:#2B6CB0; --status-info-bg:#EBF4FF;
+--status-success-text:#2F7A4D; --status-success-bg:#E8F5EC;
+--status-error-text:#B83232; --status-error-bg:#FDF0F0;
+--status-available-text:#2F7A4D; --status-available-bg:#E8F4EC;
+--status-unavailable-text:#B04242; --status-unavailable-bg:#FDECEC;
+
+--priority-high-text:#9B1C1C; --priority-high-bg:#FDE8E8;
+--priority-normal-text:#362D26; --priority-normal-bg:#EFE8E1;
+--priority-low-text:#4A5568; --priority-low-bg:#EDF2F7;
+  color-scheme: light;
+}
+[data-mood="slate"] {
+--bg-main:#F6F7F8; --bg-surface:#FFFFFF; --bg-surface-variant:#ECEFF2; --bg-surface-hover:#E2E6EA;
+--primary:#4D5D6C; --primary-hover:#3E4D5A; --primary-container:#DDE4E9; --on-primary-container:#26323C;
+--secondary:#6B7680; --secondary-container:#E9ECEF; --on-secondary-container:#343B42;
+--text-main:#252B31; --text-muted:#626C76; --text-light:#89939C;
+--border-subtle:#DEE3E7; --border-active:#4D5D6C;
+
+--status-pending-text:#7B5C17; --status-pending-bg:#F8F1DD;
+--status-info-text:#3F6B86; --status-info-bg:#E9F1F5;
+--status-success-text:#43744E; --status-success-bg:#E7F1E8;
+--status-error-text:#A54343; --status-error-bg:#F7E9E9;
+--status-available-text:#43744E; --status-available-bg:#E6F1E7;
+--status-unavailable-text:#A64B4B; --status-unavailable-bg:#F6E8E8;
+
+--priority-high-text:#913D3D; --priority-high-bg:#F5E5E5;
+--priority-normal-text:#343B42; --priority-normal-bg:#E9ECEF;
+--priority-low-text:#53606B; --priority-low-bg:#E9EDF0;
+  color-scheme: light;
+}
+[data-mood="lavender"] {
+--bg-main:#F7F5FA; --bg-surface:#FFFFFF; --bg-surface-variant:#EEEAF4; --bg-surface-hover:#E5DFEC;
+--primary:#665A7A; --primary-hover:#554A68; --primary-container:#E5DDED; --on-primary-container:#332B40;
+--secondary:#766E80; --secondary-container:#ECE8F0; --on-secondary-container:#37323D;
+--text-main:#2C2833; --text-muted:#6D6775; --text-light:#90889A;
+--border-subtle:#E0DAE7; --border-active:#665A7A;
+
+--status-pending-text:#7B5D18; --status-pending-bg:#F8F1DC;
+--status-info-text:#526D99; --status-info-bg:#EDF1F8;
+--status-success-text:#467652; --status-success-bg:#E8F1E9;
+--status-error-text:#A74650; --status-error-bg:#F8E9EC;
+--status-available-text:#467652; --status-available-bg:#E7F1E8;
+--status-unavailable-text:#A84B52; --status-unavailable-bg:#F7E8EA;
+
+--priority-high-text:#943D49; --priority-high-bg:#F6E5E8;
+--priority-normal-text:#37323D; --priority-normal-bg:#ECE8F0;
+--priority-low-text:#665F70; --priority-low-bg:#EEEAF3;
+  color-scheme: light;
+}
+[data-mood="rosewood"] {
+--bg-main:#FAF5F5; --bg-surface:#FFFFFF; --bg-surface-variant:#F3E9E9; --bg-surface-hover:#EADDDD;
+--primary:#7A4F55; --primary-hover:#684147; --primary-container:#EEDCDD; --on-primary-container:#3D262A;
+--secondary:#806C6E; --secondary-container:#F0E7E7; --on-secondary-container:#3D3334;
+--text-main:#312628; --text-muted:#746567; --text-light:#96878A; --text-subtle-readable:#6E6062;
+--border-subtle:#E7DADA; --border-active:#7A4F55;
+
+--status-pending-text:#7B5C18; --status-pending-bg:#F8F1DD;
+--status-info-text:#4C6F88; --status-info-bg:#EAF1F5;
+--status-success-text:#477552; --status-success-bg:#E8F1E9;
+--status-error-text:#A2434B; --status-error-bg:#F8E8EA;
+--status-available-text:#477552; --status-available-text-aa:#477552; --status-available-bg:#E7F1E8;
+--status-unavailable-text:#A64A52; --status-unavailable-bg:#F6E7E9;
+
+--priority-high-text:#913B44; --priority-high-bg:#F6E4E6;
+--priority-normal-text:#3D3334; --priority-normal-bg:#F0E7E7;
+--priority-low-text:#6B5D5F; --priority-low-bg:#EFE8E8;
+  color-scheme: light;
+}
+[data-mood="graphite"] {
+--bg-main:#111315; --bg-surface:#171A1D; --bg-surface-variant:#202428; --bg-surface-hover:#2A3035;
+--primary:#B8C0C8; --primary-hover:#CBD2D9; --primary-container:#31373D; --on-primary-container:#E8EDF1;
+--secondary:#929DA7; --secondary-container:#2A2F34; --on-secondary-container:#DCE2E7;
+--text-main:#EEF1F4; --text-muted:#A6AFB7; --text-light:#7D8790;
+--border-subtle:#30363C; --border-active:#B8C0C8;
+
+--status-pending-text:#E3C06A; --status-pending-bg:#3C331D;
+--status-info-text:#A3BDD0; --status-info-bg:#253442;
+--status-success-text:#82C79B; --status-success-bg:#20392A;
+--status-error-text:#E9A0A0; --status-error-bg:#44282A;
+--status-available-text:#82C79B; --status-available-bg:#1F392A;
+--status-unavailable-text:#E9A0A0; --status-unavailable-bg:#422729;
+
+--priority-high-text:#F0B0B0; --priority-high-bg:#42282A;
+--priority-normal-text:#DCE2E7; --priority-normal-bg:#2A2F34;
+--priority-low-text:#AAB4BD; --priority-low-bg:#262C31;
+  color-scheme: dark;
+}
+[data-mood="sky-night"] {
+--bg-main:#0B1220; --bg-surface:#111A2B; --bg-surface-variant:#18243A; --bg-surface-hover:#21314B;
+--primary:#8FB7FF; --primary-hover:#A4C5FF; --primary-container:#1B355B; --on-primary-container:#D6E5FF;
+--secondary:#A9B6CA; --secondary-container:#263349; --on-secondary-container:#E3EBF7;
+--text-main:#EAF1FF; --text-muted:#A8B4C7; --text-light:#76869D;
+--border-subtle:#29384F; --border-active:#8FB7FF;
+
+--status-pending-text:#E6C26A; --status-pending-bg:#40351B;
+--status-info-text:#8DBDFF; --status-info-bg:#19375A;
+--status-success-text:#79C69A; --status-success-bg:#173A2A;
+--status-error-text:#F09A9A; --status-error-bg:#482323;
+--status-available-text:#7ED3A1; --status-available-bg:#153829;
+--status-unavailable-text:#F0A0A0; --status-unavailable-bg:#442326;
+
+--priority-high-text:#FFB4B4; --priority-high-bg:#452629;
+--priority-normal-text:#E3EBF7; --priority-normal-bg:#263349;
+--priority-low-text:#AAB8CC; --priority-low-bg:#202C3F;
+  color-scheme: dark;
+}

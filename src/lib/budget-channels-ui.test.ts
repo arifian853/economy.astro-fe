@@ -25,4 +25,25 @@ describe("budget channel controls", () => {
     expect(component).toMatch(/@media\s*\(max-width:/);
     expect(component).not.toMatch(/border-left\s*:/i);
   });
+
+  test("selects the event even when completed history is deferred until the panel opens", () => {
+    expect(component).toContain('historyLoader.selectEvent(event.id);');
+    expect(component).toContain('event.status !== "completed" || !historyPanel || historyPanel.open');
+    expect(component).toContain('historyPanel?.addEventListener("toggle"');
+    expect(component).toContain('if (historyPanel.open && latestDetail) void historyLoader.load(latestDetail.event.id)');
+    expect(component).toContain('$("budget-history-list")?.replaceChildren()');
+  });
+
+  test("forces authenticated history refresh only after each budget mutation succeeds", () => {
+    for (const endpoint of ['reallocations', 'budget-adjustments']) {
+      const handler = component.slice(component.indexOf('const eventId = latestDetail.event.id;', component.indexOf(endpoint === 'reallocations' ? 'const moveForm' : 'const adjustmentForm')));
+      const success = handler.indexOf('if (!response.ok) throw');
+      const refresh = handler.indexOf('historyLoader.load(eventId, { force: true })');
+      expect(handler).toContain('encodeURIComponent(eventId)}/' + endpoint);
+      expect(refresh).toBeGreaterThan(success);
+      expect(refresh).toBeLessThan(handler.indexOf('new CustomEvent("refresh-event-detail")'));
+    }
+    const publicPage = readFileSync(new URL('../pages/share.astro', import.meta.url), 'utf8');
+    expect(publicPage).not.toMatch(/BudgetChannels|budget-history|fetchWithAuth/);
+  });
 });

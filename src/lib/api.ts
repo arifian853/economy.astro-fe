@@ -10,7 +10,7 @@ export async function fetchWithAuth(path: string, init: RequestInit = {}): Promi
 
   const headers = new Headers(init.headers || {});
   headers.set("Authorization", `Bearer ${session.access_token}`);
-  if (init.body && !headers.has("Content-Type")) {
+  if (init.body && !(init.body instanceof FormData) && !headers.has("Content-Type")) {
     headers.set("Content-Type", "application/json");
   }
 

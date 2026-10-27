@@ -1,4 +1,5 @@
 ---
+import AppearanceControl from "./AppearanceControl.astro";
 // Komponen modal dialog form transaksi (Tambah & Edit)
 ---
 
@@ -20,6 +21,7 @@
       </button>
     </div>
 
+    <AppearanceControl />
     <form id="tx-form" class="modal-form tx-modal-form">
       <input type="hidden" id="tx-form-id" value="" />
       <input type="hidden" id="tx-form-event-id" value="" />
@@ -58,16 +60,16 @@
               type="text"
               id="tx-input-price"
               class="form-control money-control"
-              placeholder="25,000…"
+              placeholder="25.000"
               required
               inputmode="numeric"
-              pattern="[0-9,]+"
-              maxlength="21"
+              pattern="[0-9.,]+"
+              maxlength="64"
               autocomplete="off"
               aria-describedby="tx-price-hint"
             />
           </div>
-          <span id="tx-price-hint" class="form-hint">Ribuan otomatis pakai koma.</span>
+          <span id="tx-price-hint" class="form-hint">Rupiah penuh, contoh 25.000.</span>
         </div>
       </div>
 
@@ -78,6 +80,8 @@
         </div>
         <strong id="tx-live-total" class="live-total-value" aria-live="polite" aria-atomic="true">Rp0</strong>
       </div>
+
+      <p id="tx-idr-reference" class="form-hint" hidden></p>
 
       <div class="form-row-2 tx-form-row">
         <div class="form-group">
@@ -107,6 +111,21 @@
         ></textarea>
       </div>
 
+      <details class="tx-evidence-details">
+        <summary>Bukti pengeluaran <span class="muted">(opsional)</span></summary>
+        <div class="tx-evidence-fields">
+          <div class="form-group">
+            <label for="tx-input-evidence-file" class="form-label">Foto / file bukti</label>
+            <input id="tx-input-evidence-file" class="form-control" type="file" accept="image/jpeg,image/png,image/webp,application/pdf" />
+            <span class="form-hint">JPG, PNG, WebP, PDF · maks. 12 MiB. Disimpan privat.</span>
+          </div>
+          <div class="form-group">
+            <label for="tx-input-evidence-url" class="form-label">Tautan bukti</label>
+            <input id="tx-input-evidence-url" class="form-control" type="url" inputmode="url" autocomplete="url" placeholder="https://…" />
+          </div>
+        </div>
+      </details>
+
       <div id="tx-form-error" class="error-box" role="alert" hidden></div>
 
       <div class="modal-actions tx-modal-actions">
@@ -118,8 +137,12 @@
 
 <script>
   import { fetchWithAuth } from "../lib/api";
+  import { alertDialog } from "../lib/dialog";
+  import { multiplyMoney, minorDigits } from "../lib/money";
   import { formatCurrency } from "../lib/currency";
-  import { formatMoneyInput, formatMoneyInputState, parseMoneyInput } from "../lib/money-input";
+  import { formatMoneyValue, formatMoneyInputState, parseMoneyInput } from "../lib/money-input";
+  import { approximateIdr, eventReference, referenceLabel, type FxReference } from "../lib/fx";
+  import type { EventCurrency } from "../types";
   import type { Transaction } from "../types";
 
   const $ = <T extends HTMLElement = HTMLElement>(id: string): T | null =>
@@ -136,12 +159,17 @@
   const methodInput = $("tx-input-method") as HTMLSelectElement | null;
   const timeInput = $("tx-input-time") as HTMLInputElement | null;
   const noteInput = $("tx-input-note") as HTMLTextAreaElement | null;
+  const evidenceFileInput = $("tx-input-evidence-file") as HTMLInputElement | null;
+  const evidenceUrlInput = $("tx-input-evidence-url") as HTMLInputElement | null;
   const errorBox = $("tx-form-error");
   const submitBtn = $("btn-submit-tx") as HTMLButtonElement | null;
   const closeBtn = $("btn-close-tx") as HTMLButtonElement | null;
   const liveTotalEl = $("tx-live-total");
   const liveBreakdownEl = $("tx-live-breakdown");
 
+  let currency = 'IDR';
+  let fx: FxReference = { rate: null, date: null, provider: null };
+  let snapshot = false;
   // Helper untuk format local datetime input YYYY-MM-DDTHH:mm
   const toLocalDatetimeString = (date: Date): string => {
     const pad = (n: number) => String(n).padStart(2, "0");
@@ -155,19 +183,26 @@
 
   const updateLiveTotal = () => {
     const quantity = Number(qtyInput?.value || 0);
-    const unitPrice = parseMoneyInput(priceInput?.value || "") ?? 0;
-    const total = Math.max(0, quantity) * Math.max(0, unitPrice);
+    const unitPrice = parseMoneyInput(priceInput?.value || "0", currency);
+    let total = '0';
+    try { if (unitPrice === null) throw Error('Invalid price'); total = multiplyMoney(unitPrice, Math.max(0, quantity), currency); }
+    catch { if (liveTotalEl) liveTotalEl.textContent = 'Periksa nominal / jumlah'; if (liveBreakdownEl) liveBreakdownEl.textContent = ''; const reference = $('tx-idr-reference'); if (reference) { reference.hidden = currency === 'IDR'; reference.textContent = 'Masukkan nominal yang valid untuk melihat referensi IDR.'; } return; }
 
-    if (liveTotalEl) liveTotalEl.textContent = formatCurrency(total);
+    if (liveTotalEl) liveTotalEl.textContent = formatCurrency(total, currency);
+    const reference = $('tx-idr-reference');
+    if (reference) {
+      reference.hidden = currency === 'IDR';
+      reference.textContent = `${approximateIdr(total, currency, fx)} · ${snapshot ? 'Snapshot transaksi' : 'Perkiraan; snapshot disimpan server saat pencatatan'} · ${referenceLabel(fx)}`;
+    }
     if (liveBreakdownEl) {
-      liveBreakdownEl.textContent = `${quantity || 0} barang × ${formatCurrency(unitPrice)}`;
+      liveBreakdownEl.textContent = `${quantity || 0} barang × ${formatCurrency(unitPrice ?? '0', currency)}`;
     }
   };
 
-  const formatMoneyField = (input: HTMLInputElement) => {
+  const formatMoneyField = (input: HTMLInputElement, inputType?: string) => {
     const { value, caret } = formatMoneyInputState(
       input.value,
-      input.selectionStart ?? input.value.length,
+      input.selectionStart ?? input.value.length, currency, inputType,
     );
     input.value = value;
     input.setSelectionRange(caret, caret);
@@ -175,8 +210,8 @@
 
   qtyInput?.addEventListener("input", updateLiveTotal);
   if (priceInput) {
-    priceInput.addEventListener("input", () => {
-      formatMoneyField(priceInput);
+    priceInput.addEventListener("input", (event) => {
+      formatMoneyField(priceInput, (event as InputEvent).inputType);
       updateLiveTotal();
     });
   }
@@ -186,10 +221,19 @@
     const detail = (e as CustomEvent<{
       mode: "add" | "edit";
       eventId?: string;
+      eventCurrency?: EventCurrency;
       tx?: Transaction;
     }>).detail;
 
     if (!dialog) return;
+    currency = detail.tx?.baseCurrency ?? detail.eventCurrency?.baseCurrency ?? 'IDR';
+    snapshot = detail.mode === 'edit';
+    fx = snapshot ? { rate: detail.tx?.fxRateToIdr ?? null, date: detail.tx?.fxRateDate ?? null, provider: detail.tx?.fxRateProvider ?? null } : eventReference(detail.eventCurrency ?? {});
+    document.querySelector('#tx-form .money-prefix')!.textContent = currency === 'IDR' ? 'Rp' : currency;
+    const digits = minorDigits(currency);
+    if (priceInput) { priceInput.inputMode = digits ? 'decimal' : 'numeric'; priceInput.placeholder = digits ? '25,' + '0'.repeat(digits) : '25.000'; }
+    const hint = $('tx-price-hint');
+    if (hint) hint.textContent = `${currency} · ${digits} digit pecahan; gunakan koma untuk desimal.`;
 
     if (errorBox) {
       errorBox.textContent = "";
@@ -217,7 +261,7 @@
 
       if (nameInput) nameInput.value = tx.name;
       if (qtyInput) qtyInput.value = String(tx.quantity);
-      if (priceInput) priceInput.value = formatMoneyInput(tx.unitPrice);
+      if (priceInput) priceInput.value = formatMoneyValue(tx.unitPrice, currency);
       if (methodInput) methodInput.value = tx.paymentMethod;
       if (timeInput) {
         timeInput.value = tx.transactionAt
@@ -227,6 +271,8 @@
       if (noteInput) noteInput.value = tx.note || "";
     }
 
+    if (evidenceFileInput) evidenceFileInput.value = "";
+    if (evidenceUrlInput) evidenceUrlInput.value = "";
     updateLiveTotal();
     dialog.showModal();
     if (window.matchMedia("(pointer: fine)").matches) {
@@ -260,7 +306,7 @@
     const eventId = eventIdInput?.value;
     const name = nameInput?.value.trim();
     const quantity = Number(qtyInput?.value);
-    const unitPrice = parseMoneyInput(priceInput?.value || "");
+    const unitPrice = parseMoneyInput(priceInput?.value || "", currency);
     const paymentMethod = methodInput?.value;
     const timeVal = timeInput?.value;
     const note = noteInput?.value.trim() || null;
@@ -274,9 +320,9 @@
       return;
     }
 
-    if (isNaN(quantity) || quantity < 1) {
+    if (!Number.isSafeInteger(quantity) || quantity < 1) {
       if (errorBox) {
-        errorBox.textContent = "Jumlah minimal 1.";
+        errorBox.textContent = "Jumlah harus bilangan bulat, minimal 1.";
         errorBox.hidden = false;
       }
       qtyInput?.focus();
@@ -285,12 +331,15 @@
 
     if (unitPrice === null) {
       if (errorBox) {
-        errorBox.textContent = "Masukkan harga satuan dalam rupiah yang valid.";
+        errorBox.textContent = "Masukkan harga satuan sesuai pecahan mata uang event.";
         errorBox.hidden = false;
       }
       priceInput?.focus();
       return;
     }
+
+    try { multiplyMoney(unitPrice, quantity, currency); }
+    catch { if (errorBox) { errorBox.textContent = 'Total melebihi batas nominal yang dapat disimpan.'; errorBox.hidden = false; } return; }
 
     if (!id && !eventId) {
       if (errorBox) {
@@ -311,36 +360,25 @@
     try {
       const transactionAt = timeVal ? new Date(timeVal).toISOString() : new Date().toISOString();
 
+      let savedTransactionId = id || "";
       if (!id) {
         // Mode Add: POST /api/events/:eventId/transactions
         const res = await fetchWithAuth(`/events/${eventId}/transactions`, {
           method: "POST",
-          body: JSON.stringify({
-            name,
-            quantity,
-            unitPrice,
-            paymentMethod,
-            transactionAt,
-            note,
-          }),
+          body: JSON.stringify({ name, quantity, unitPrice, baseCurrency: currency, paymentMethod, transactionAt, note }),
         });
 
         if (!res.ok) {
           const errData = await res.json().catch(() => ({}));
           throw new Error(errData.error || `Gagal menambah transaksi (${res.status})`);
         }
+        const created = await res.json();
+        savedTransactionId = created.id;
       } else {
         // Mode Edit: PATCH /api/transactions/:id
         const res = await fetchWithAuth(`/transactions/${id}`, {
           method: "PATCH",
-          body: JSON.stringify({
-            name,
-            quantity,
-            unitPrice,
-            paymentMethod,
-            transactionAt,
-            note,
-          }),
+          body: JSON.stringify({ name, quantity, unitPrice, baseCurrency: currency, paymentMethod, transactionAt, note }),
         });
 
         if (!res.ok) {
@@ -349,9 +387,42 @@
         }
       }
 
+      let evidenceError: string | null = null;
+      try {
+        const evidenceUrl = evidenceUrlInput?.value.trim();
+        if (evidenceUrl) {
+          const linkResponse = await fetchWithAuth(`/transactions/${savedTransactionId}/evidence-links`, {
+            method: "POST",
+            body: JSON.stringify({ url: evidenceUrl, label: "Tautan bukti" }),
+          });
+          if (!linkResponse.ok) {
+            const error = await linkResponse.json().catch(() => ({}));
+            throw new Error(error.error || `Tautan bukti gagal disimpan (${linkResponse.status})`);
+          }
+        }
+
+        const evidenceFile = evidenceFileInput?.files?.[0];
+        if (evidenceFile) {
+          const payload = new FormData();
+          payload.append("file", evidenceFile);
+          const fileResponse = await fetchWithAuth(`/transactions/${savedTransactionId}/evidence-files`, {
+            method: "POST",
+            body: payload,
+          });
+          if (!fileResponse.ok) {
+            const error = await fileResponse.json().catch(() => ({}));
+            throw new Error(error.error || `Unggah bukti gagal (${fileResponse.status})`);
+          }
+        }
+      } catch (evidenceFailure) {
+        evidenceError = evidenceFailure instanceof Error ? evidenceFailure.message : "Bukti gagal disimpan.";
+      }
+
       closeModal();
-      // Notifikasi refresh dashboard real-time (Checkpoint M11.2)
       window.dispatchEvent(new CustomEvent("refresh-event-detail"));
+      if (evidenceError) {
+        void alertDialog({ title: "Pengeluaran tersimpan", message: `Pengeluaran berhasil dicatat, tetapi bukti belum tersimpan. ${evidenceError}` });
+      }
     } catch (err: unknown) {
       console.error("[Economy] Transaction mutation error:", err);
       if (errorBox) {

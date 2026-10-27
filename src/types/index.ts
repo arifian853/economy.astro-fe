@@ -1,18 +1,40 @@
+import type { Money } from '../lib/money';
 export type EventStatus = "upcoming" | "active" | "completed";
 
-export type EventItem = {
+// Optional during rollout; absent fields must never imply a historical snapshot.
+export type InitialBudgetSnapshot = {
+  initialBudget?: Money;
+  initialBudgetKnown?: boolean;
+};
+
+export type EventCurrency = {
+  currencyMode?: 'domestic' | 'international';
+  baseCurrency?: string;
+  currencyLocked?: boolean;
+  fxReferenceRateToIdr?: string | null;
+  fxReferenceDate?: string | null;
+  fxReferenceProvider?: string | null;
+};
+export type TransactionFx = {
+  baseCurrency?: string;
+  fxRateToIdr?: string | null;
+  fxRateDate?: string | null;
+  fxRateProvider?: string | null;
+  idrEquivalent?: Money | null;
+};
+export type EventItem = EventCurrency & InitialBudgetSnapshot & {
   id: string;
   name: string;
   eventDate: string;
-  budget: number;
-  cashBudget: number | null;
-  digitalBudget: number | null;
+  budget: Money;
+  cashBudget: Money | null;
+  digitalBudget: Money | null;
   status: EventStatus;
   notes: string | null;
   createdAt: string;
   updatedAt: string;
   completedAt: string | null;
-  totalExpenses: number;
+  totalExpenses: Money;
   participantCount: number;
 };
 
@@ -21,12 +43,12 @@ export type Participant = {
   name: string;
 };
 
-export type Transaction = {
+export type Transaction = TransactionFx & {
   id: string;
   eventId: string;
   name: string;
   quantity: number;
-  unitPrice: number;
+  unitPrice: Money;
   paymentMethod: "cash" | "transfer" | "qris" | "ewallet" | "other";
   note: string | null;
   transactionAt: string;

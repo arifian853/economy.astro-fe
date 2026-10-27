@@ -1,0 +1,116 @@
+<section id="fx-context" class="fx-context" aria-label="FX Context" hidden>
+  <p class="eyebrow">FX Context</p>
+  <p id="fx-context-summary" class="form-hint"></p>
+  <p id="fx-context-rate" class="mono"></p>
+  <button type="button" id="fx-open" class="btn btn-outline btn-sm" aria-haspopup="dialog">Konverter ↔ IDR</button>
+</section>
+<dialog id="fx-dialog" class="modal-dialog fx-dialog" aria-labelledby="fx-title" aria-describedby="fx-disclaimer">
+  <div class="card fx-dialog-content">
+    <div class="modal-header"><h2 id="fx-title">Konverter referensi</h2><button id="fx-close" class="btn btn-ghost" type="button" aria-label="Tutup konverter">×</button></div>
+    <p id="fx-tool-state" class="form-hint" role="status"></p>
+    <div class="form-group"><label id="fx-base-label" class="form-label" for="fx-base-input">Mata uang event</label><input id="fx-base-input" class="form-control" type="text" inputmode="decimal" autocomplete="off" /></div>
+    <span aria-hidden="true">↕</span>
+    <div class="form-group"><label class="form-label" for="fx-idr-input">IDR · Rupiah</label><input id="fx-idr-input" class="form-control" type="text" inputmode="numeric" autocomplete="off" /></div>
+    <p id="fx-conversion" class="form-hint" role="status" aria-live="polite"></p>
+    <p id="fx-disclaimer" class="form-hint">≈ Perkiraan, dibulatkan ke pecahan mata uang tujuan. Bukan kurs bank atau biaya penukaran. Konverter tidak mengubah anggaran atau snapshot transaksi.</p>
+  </div>
+</dialog>
+<script>
+  import { fetchFx } from "../lib/fx-api";
+  import { eventReference,  normalizeFx, convertReference, referenceLabel, type FxReference } from '../lib/fx';
+  import { formatMoneyValue, formatMoneyInputState, parseMoneyInput } from '../lib/money-input';
+  import { formatCurrency } from '../lib/currency';
+  import type { EventCurrency, EventStatus } from '../types';
+  type Context = EventCurrency & { status?: EventStatus };
+  const section = document.getElementById('fx-context')!;
+  const dialog = document.getElementById('fx-dialog') as HTMLDialogElement;
+  const baseInput = document.getElementById('fx-base-input') as HTMLInputElement;
+  const idrInput = document.getElementById('fx-idr-input') as HTMLInputElement;
+  const state = document.getElementById('fx-tool-state')!;
+  const result = document.getElementById('fx-conversion')!;
+  let context: Context = {};
+  let fx: FxReference = { rate: null, date: null, provider: null };
+  let controller: AbortController | null = null;
+  let generation = 0;
+  const currency = () => context.baseCurrency ?? 'IDR';
+  const stopRead = () => { generation++; controller?.abort(); controller = null; };
+  const convert = (direction: 'to-idr' | 'from-idr') => {
+    const source = direction === 'to-idr' ? baseInput : idrInput;
+    const target = direction === 'to-idr' ? idrInput : baseInput;
+    const sourceCode = direction === 'to-idr' ? currency() : 'IDR';
+    const targetCode = direction === 'to-idr' ? 'IDR' : currency();
+    const amount = parseMoneyInput(source.value, sourceCode);
+    if (!fx.rate || amount === null) { target.value = ''; result.textContent = fx.rate ? 'Masukkan nominal yang sesuai pecahan mata uang.' : 'Konversi tidak tersedia tanpa kurs referensi.'; return; }
+    const converted = convertReference(amount, currency(), fx.rate, direction);
+    target.value = formatMoneyValue(converted, targetCode);
+    result.textContent = `${formatCurrency(amount, sourceCode)} ≈ ${formatCurrency(converted, targetCode)}`;
+  };
+  const useStored = () => {
+    fx = eventReference(context);
+    state.textContent = referenceLabel(fx, context.status === 'completed');
+    baseInput.disabled = idrInput.disabled = !fx.rate;
+    convert('to-idr');
+  };
+  window.addEventListener('update-fx-context', (event: Event) => {
+    stopRead();
+    context = (event as CustomEvent<Context>).detail;
+    section.hidden = currency() === 'IDR';
+    document.getElementById('fx-context-summary')!.textContent = referenceLabel(eventReference(context), context.status === 'completed');
+    // The exact decimal rate is displayed verbatim, without money-precision truncation.
+    const stored = eventReference(context);
+    document.getElementById('fx-context-rate')!.textContent = stored.rate ? `1 ${currency()} ≈ ${stored.rate} IDR` : '';
+    document.getElementById('fx-base-label')!.textContent = `${currency()} · Mata uang event`;
+    if (section.hidden && dialog.open) dialog.close();
+    if (dialog.open) useStored();
+  });
+  document.getElementById('fx-open')!.addEventListener('click', async () => {
+    if (section.hidden) return;
+    stopRead();
+    baseInput.value = formatMoneyValue('1', currency());
+    useStored();
+    dialog.showModal();
+    // Archived statements must never fetch a newer observation.
+    if (context.status === 'completed') return;
+    const current = generation;
+    controller = new AbortController();
+    state.textContent += ' · Memeriksa kurs terbaru…';
+    const timeout = setTimeout(() => controller?.abort(), 5000);
+    try {
+      const raw = await fetchFx(`rate?base=${encodeURIComponent(currency())}&quote=IDR`, controller.signal) as Record<string, unknown>;
+      if (current !== generation || !dialog.open) return;
+      if (raw.base !== currency() || raw.quote !== 'IDR' || typeof raw.stale !== 'boolean') throw Error('Invalid reference');
+      fx = normalizeFx(raw.rate, raw.rateDate, raw.provider, currency());
+      state.textContent = referenceLabel(fx, false, raw.stale);
+      baseInput.disabled = idrInput.disabled = !fx.rate;
+      convert('to-idr');
+    } catch {
+      if (current === generation && dialog.open) {
+        useStored();
+        state.textContent = fx.rate ? `${referenceLabel(fx)} · Pembaruan gagal; menggunakan referensi tersimpan.` : 'Kurs tidak tersedia. Pencatatan pengeluaran tetap dapat dilakukan.';
+      }
+    } finally { clearTimeout(timeout); }
+  });
+  for (const [input, direction] of [[baseInput, 'to-idr'], [idrInput, 'from-idr']] as const) {
+    input.addEventListener('input', (event) => {
+      const formatted = formatMoneyInputState(input.value, input.selectionStart ?? input.value.length, direction === 'to-idr' ? currency() : 'IDR', (event as InputEvent).inputType);
+      input.value = formatted.value; input.setSelectionRange(formatted.caret, formatted.caret);
+      convert(direction);
+    });
+  }
+  document.getElementById('fx-close')!.addEventListener('click', () => dialog.close());
+  dialog.addEventListener('close', stopRead);
+  window.addEventListener('pagehide', stopRead);
+  document.addEventListener('visibilitychange', () => { if (document.hidden) { stopRead(); if (dialog.open) useStored(); } });
+</script>
+<style>
+  .fx-context { padding: 16px; border-radius: var(--radius-md); background: var(--bg-surface-variant); overflow-wrap: anywhere; }
+  .fx-context p { margin: 0 0 12px; }
+  .fx-dialog { width: min(420px, calc(100vw - 32px)); }
+  .fx-dialog-content { display: grid; gap: 16px; padding: 24px; }
+  .fx-dialog h2 { font-size: 20px; }
+  .fx-dialog input { min-width: 0; width: 100%; }
+  @media (max-width: 600px) {
+    .fx-dialog { margin: auto 0 0; width: 100%; max-width: none; max-height: 90dvh; }
+    .fx-dialog-content { padding-bottom: max(24px, env(safe-area-inset-bottom)); border-radius: var(--radius-lg) var(--radius-lg) 0 0; }
+  }
+</style>

@@ -26,7 +26,7 @@
       <label for="cash-budget-input" class="form-label">Anggaran yang dijadikan tunai</label>
       <div class="money-input">
         <span class="money-prefix" aria-hidden="true">Rp</span>
-        <input id="cash-budget-input" class="form-control money-control" type="text" inputmode="numeric" autocomplete="off" placeholder="Contoh: 500,000" aria-describedby="cash-budget-hint" />
+        <input id="cash-budget-input" class="form-control money-control" type="text" inputmode="numeric" autocomplete="off" placeholder="Contoh: 500.000" aria-describedby="cash-budget-hint" />
       </div>
       <span id="cash-budget-hint" class="form-hint">Sisa dari total anggaran otomatis menjadi dana digital.</span>
     </div>
@@ -38,13 +38,42 @@
   </form>
   <p id="budget-channel-feedback" class="budget-channel-feedback muted" role="status" aria-live="polite">Belum dibagi. Pengeluaran tetap tercatat dari metode pembayarannya.</p>
   <p id="budget-channel-error" class="budget-channel-error" role="alert" hidden></p>
+
+  <details id="fund-move-details" class="budget-operation-details">
+    <summary>Pindahkan saldo tunai ↔ digital</summary>
+    <form id="fund-move-form" class="budget-operation-form" novalidate>
+      <div class="form-group"><label class="form-label" for="fund-move-from">Pindahkan dari</label><select id="fund-move-from" class="form-control"><option value="cash">Tunai</option><option value="digital">Digital / QRIS</option></select></div>
+      <div class="form-group"><label class="form-label" for="fund-move-amount">Jumlah</label><input id="fund-move-amount" class="form-control" type="text" min="1" step="1" inputmode="numeric" required placeholder="Rp"></div>
+      <div class="form-group"><label class="form-label" for="fund-move-note">Catatan (opsional)</label><input id="fund-move-note" class="form-control" type="text" maxlength="500" placeholder="Mis. sisa tunai dipindahkan"></div>
+      <button id="fund-move-submit" class="btn btn-outline" type="submit">Pindahkan saldo</button>
+    </form>
+  </details>
+
+  <details id="budget-adjustment-details" class="budget-operation-details">
+    <summary>Tambah / kurangi anggaran</summary>
+    <form id="budget-adjustment-form" class="budget-operation-form" novalidate>
+      <div class="form-group"><label class="form-label" for="budget-adjust-operation">Aksi</label><select id="budget-adjust-operation" class="form-control"><option value="increase">Tambah</option><option value="decrease">Kurangi</option></select></div>
+      <div class="form-group"><label class="form-label" for="budget-adjust-amount">Perubahan total</label><input id="budget-adjust-amount" class="form-control" type="text" min="1" step="1" inputmode="numeric" required placeholder="Rp"></div>
+      <div class="form-group"><label class="form-label" for="budget-adjust-cash-direction">Perubahan alokasi tunai</label><select id="budget-adjust-cash-direction" class="form-control"><option value="increase">Tambah tunai</option><option value="decrease">Kurangi tunai</option></select></div>
+      <div class="form-group"><label class="form-label" for="budget-adjust-cash-amount">Jumlah alokasi tunai</label><input id="budget-adjust-cash-amount" class="form-control" type="text" min="0" step="1" inputmode="numeric" required value="0"></div>
+      <div class="form-group"><label class="form-label" for="budget-adjust-reason">Alasan *</label><input id="budget-adjust-reason" class="form-control" type="text" maxlength="500" required placeholder="Mis. tambahan iuran peserta"></div>
+      <button id="budget-adjust-submit" class="btn btn-primary" type="submit">Simpan penyesuaian</button>
+    </form>
+  </details>
+
+  <section id="budget-history-section" class="budget-history" aria-labelledby="budget-history-title" hidden>
+    <h3 id="budget-history-title">Riwayat anggaran</h3>
+    <ol id="budget-history-list" class="budget-history-list"></ol>
+  </section>
 </section>
 
 <script>
   import { fetchWithAuth } from "../lib/api";
   import { formatCurrency } from "../lib/currency";
-  import { formatMoneyInput, formatMoneyInputState, parseMoneyInput } from "../lib/money-input";
+  import { formatMoneyValue, formatMoneyInputState, parseMoneyInput } from "../lib/money-input";
+  import { compareMoney, absMoney, subtractMoney, minorDigits } from "../lib/money";
   import { calculateBudgetChannels } from "../lib/budget-channels";
+  import { createBudgetHistoryLoader } from "../lib/budget-history";
   import type { EventDetail } from "../types";
 
   const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T | null;
@@ -56,6 +85,10 @@
   const digitalPreview = $("digital-budget-preview");
   let latestDetail: EventDetail | null = null;
 
+  const currency = () => latestDetail?.event.baseCurrency ?? 'IDR';
+  const money = (value: import('../lib/money').Money) => formatCurrency(value, currency());
+  const parse = (value: string) => parseMoneyInput(value, currency());
+  const signed = (value: import('../lib/money').Money) => `${compareMoney(value, '0', currency()) < 0 ? '−' : '+'}${money(absMoney(value, currency()))}`;
   const showError = (message: string) => {
     if (!error) return;
     error.textContent = message;
@@ -70,40 +103,53 @@
   const render = (detail: EventDetail) => {
     latestDetail = detail;
     const { event, transactions = [] } = detail;
-    const summary = calculateBudgetChannels(event.budget, event.cashBudget, transactions);
-    if (form) form.hidden = event.status === "completed";
+    const summary = calculateBudgetChannels(event.budget, event.cashBudget, transactions, currency());
+    if (form) form.hidden = event.status === "completed" || event.cashBudget !== null;
+    const moveDetails = $("fund-move-details");
+    if (moveDetails) moveDetails.hidden = event.status === "completed" || event.cashBudget === null;
+    const adjustmentDetails = $("budget-adjustment-details");
+    if (adjustmentDetails) adjustmentDetails.hidden = event.status === "completed" || event.cashBudget === null;
+    historyLoader.selectEvent(event.id);
+    if (event.status !== "completed" || !historyPanel || historyPanel.open) {
+      void historyLoader.load(event.id);
+    }
+    document.querySelectorAll('.budget-channels-card .money-prefix').forEach(el => { el.textContent = currency() === 'IDR' ? 'Rp' : currency(); });
+    for (const id of ['cash-budget-input', 'fund-move-amount', 'budget-adjust-amount', 'budget-adjust-cash-amount']) {
+      const field = $(id) as HTMLInputElement | null;
+      if (field) { field.inputMode = minorDigits(currency()) === 0 ? 'numeric' : 'decimal'; field.placeholder = currency(); }
+    }
     const description = $("budget-channels-description");
     if (description && event.status === "completed") description.textContent = "Ringkasan penggunaan dana tunai dan digital.";
     if (input && document.activeElement !== input) {
-      input.value = event.cashBudget === null ? "" : formatMoneyInput(event.cashBudget);
+      input.value = event.cashBudget === null ? "" : formatMoneyValue(event.cashBudget, currency());
     }
     if (feedback) {
       feedback.textContent = event.cashBudget === null
         ? "Belum dibagi. Pengeluaran tetap tercatat dari metode pembayarannya."
-        : `Total teralokasi ${formatCurrency(event.budget)}: tunai ${formatCurrency(summary.cashBudget ?? 0)} dan digital ${formatCurrency(summary.digitalBudget ?? 0)}.`;
+        : `Total teralokasi ${money(event.budget)}: tunai ${money(summary.cashBudget ?? 0)} dan digital ${money(summary.digitalBudget ?? 0)}.`;
     }
     const setText = (id: string, value: string) => { const el = $(id); if (el) el.textContent = value; };
-    setText("cash-channel-budget", summary.cashBudget === null ? "Belum dibagi" : formatCurrency(summary.cashBudget));
-    setText("cash-channel-spent", formatCurrency(summary.cashExpenses));
-    setText("cash-channel-remaining", summary.cashRemaining === null ? "—" : formatCurrency(summary.cashRemaining));
-    setText("digital-channel-budget", summary.digitalBudget === null ? "Belum dibagi" : formatCurrency(summary.digitalBudget));
-    setText("digital-channel-spent", formatCurrency(summary.digitalExpenses));
-    setText("digital-channel-remaining", summary.digitalRemaining === null ? "—" : formatCurrency(summary.digitalRemaining));
+    setText("cash-channel-budget", summary.cashBudget === null ? "Belum dibagi" : money(summary.cashBudget));
+    setText("cash-channel-spent", money(summary.cashExpenses));
+    setText("cash-channel-remaining", summary.cashRemaining === null ? "—" : money(summary.cashRemaining));
+    setText("digital-channel-budget", summary.digitalBudget === null ? "Belum dibagi" : money(summary.digitalBudget));
+    setText("digital-channel-spent", money(summary.digitalExpenses));
+    setText("digital-channel-remaining", summary.digitalRemaining === null ? "—" : money(summary.digitalRemaining));
     updateDigitalPreview();
   };
 
   const updateDigitalPreview = () => {
     if (!digitalPreview || !input || !latestDetail) return;
-    const cash = parseMoneyInput(input.value);
+    const cash = parse(input.value);
     digitalPreview.textContent = cash === null
       ? "Masukkan alokasi tunai"
-      : cash > latestDetail.event.budget
+      : compareMoney(cash, latestDetail.event.budget, currency()) > 0
         ? "Alokasi tunai melebihi total anggaran"
-        : formatCurrency(latestDetail.event.budget - cash);
+        : money(subtractMoney(latestDetail.event.budget, cash, currency()));
   };
 
-  input?.addEventListener("input", () => {
-    const { value, caret } = formatMoneyInputState(input.value, input.selectionStart ?? input.value.length);
+  input?.addEventListener("input", (event) => {
+    const { value, caret } = formatMoneyInputState(input.value, input.selectionStart ?? input.value.length, currency(), (event as InputEvent).inputType);
     input.value = value;
     input.setSelectionRange(caret, caret);
     updateDigitalPreview();
@@ -114,13 +160,13 @@
     event.preventDefault();
     if (!latestDetail || !input || !saveButton || latestDetail.event.status === "completed") return;
     clearError();
-    const cashBudget = parseMoneyInput(input.value);
-    if (cashBudget === null || cashBudget < 0) {
+    const cashBudget = parse(input.value);
+    if (cashBudget === null || compareMoney(cashBudget, '0', currency()) < 0) {
       showError("Isi nominal tunai dengan angka yang valid.");
       input.focus();
       return;
     }
-    if (cashBudget > latestDetail.event.budget) {
+    if (compareMoney(cashBudget, latestDetail.event.budget, currency()) > 0) {
       showError("Alokasi tunai tidak boleh melebihi total anggaran.");
       input.focus();
       return;
@@ -133,17 +179,128 @@
         method: "PATCH",
         body: JSON.stringify({ cashBudget }),
       });
-      if (!response.ok) throw new Error("Gagal menyimpan pembagian dana.");
+      if (!response.ok) { const failure = await response.json().catch(() => ({})); throw new Error(failure.error || "Gagal menyimpan pembagian dana."); }
       const updatedEvent = await response.json() as EventDetail["event"];
       latestDetail = { ...latestDetail, event: { ...latestDetail.event, ...updatedEvent } };
       render(latestDetail);
       if (feedback) feedback.textContent = "Pembagian dana tersimpan.";
+      window.dispatchEvent(new CustomEvent("refresh-event-detail"));
     } catch (err) {
       showError(err instanceof Error ? err.message : "Gagal menyimpan pembagian dana.");
     } finally {
       saveButton.disabled = false;
       saveButton.textContent = "Simpan pembagian";
     }
+  });
+
+  const renderBudgetHistory = ({ reallocations = [], adjustments = [] }: { reallocations?: any[]; adjustments?: any[] }) => {
+    const section = $("budget-history-section");
+    const list = $("budget-history-list");
+    if (!section || !list) return;
+    const records = [
+      ...reallocations.map((row: any) => ({ ...row, kind: "move" as const, at: row.created_at })),
+      ...adjustments.map((row: any) => ({ ...row, kind: "adjustment" as const, at: row.created_at })),
+    ].sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime());
+    list.replaceChildren();
+    for (const row of records) {
+      const item = document.createElement("li");
+      const when = new Date(row.at).toLocaleString("id-ID");
+      if (row.kind === "move") {
+        const from = row.from_channel === "cash" ? "Tunai" : "Digital";
+        item.textContent = `${when} · Pindah ${from} → ${row.from_channel === "cash" ? "Digital" : "Tunai"} ${money(row.amount)}${row.note ? ` · ${row.note}` : ""}`;
+      } else {
+        const delta = row.budget_delta;
+        const cashDelta = row.cash_budget_delta;
+        const digitalDelta = subtractMoney(delta, cashDelta, currency());
+        item.textContent = `${when} · Anggaran ${signed(delta)}; tunai ${signed(cashDelta)}, digital ${signed(digitalDelta)} · ${row.reason}`;
+      }
+      list.append(item);
+    }
+    section.hidden = records.length === 0;
+  };
+
+  const historyPanel = $("budget-history-section")?.closest("details");
+  const historyLoader = createBudgetHistoryLoader({
+    fetchHistory: async (eventId) => {
+      if (!$("budget-history-section") || !$("budget-history-list")) return null;
+      const response = await fetchWithAuth(`/events/${encodeURIComponent(eventId)}/budget-history`);
+      return response.ok ? response.json() : null;
+    },
+    renderHistory: renderBudgetHistory,
+    clearHistory: () => {
+      $("budget-history-list")?.replaceChildren();
+      const section = $("budget-history-section");
+      if (section) section.hidden = true;
+    },
+  });
+  historyPanel?.addEventListener("toggle", () => {
+    if (historyPanel.open && latestDetail) void historyLoader.load(latestDetail.event.id);
+  });
+
+  for (const id of ['fund-move-amount', 'budget-adjust-amount', 'budget-adjust-cash-amount']) {
+    const field = $(id) as HTMLInputElement | null;
+    field?.addEventListener('input', (event) => {
+      const state = formatMoneyInputState(field.value, field.selectionStart ?? field.value.length, currency(), (event as InputEvent).inputType);
+      field.value = state.value; field.setSelectionRange(state.caret, state.caret);
+    });
+  }
+  const moveForm = $("fund-move-form") as HTMLFormElement | null;
+  moveForm?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    if (!latestDetail || latestDetail.event.status === "completed") return;
+    const amount = parse(($("fund-move-amount") as HTMLInputElement | null)?.value ?? "");
+    const from = ($( "fund-move-from") as HTMLSelectElement | null)?.value;
+    const button = $("fund-move-submit") as HTMLButtonElement | null;
+    if (amount === null || compareMoney(amount, '0', currency()) <= 0 || !button) return;
+    button.disabled = true;
+    button.textContent = "Memindahkan…";
+    const eventId = latestDetail.event.id;
+    try {
+      const note = ($( "fund-move-note") as HTMLInputElement | null)?.value.trim();
+      const response = await fetchWithAuth(`/events/${encodeURIComponent(eventId)}/reallocations`, {
+        method: "POST", body: JSON.stringify({ from, amount, ...(note ? { note } : {}) }),
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(result.error || "Gagal memindahkan saldo.");
+      void historyLoader.load(eventId, { force: true });
+      moveForm.reset();
+      if (feedback) feedback.textContent = "Realokasi tercatat. Total anggaran dan pengeluaran tidak berubah.";
+      window.dispatchEvent(new CustomEvent("refresh-event-detail"));
+    } catch (err) { showError(err instanceof Error ? err.message : "Gagal memindahkan saldo."); }
+    finally { button.disabled = false; button.textContent = "Pindahkan saldo"; }
+  });
+
+  const adjustmentForm = $("budget-adjustment-form") as HTMLFormElement | null;
+  adjustmentForm?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    if (!latestDetail || latestDetail.event.status === "completed") return;
+    const amount = parse(($("budget-adjust-amount") as HTMLInputElement | null)?.value ?? "");
+    const cashAmount = parse(($("budget-adjust-cash-amount") as HTMLInputElement | null)?.value ?? "");
+    const operation = ($( "budget-adjust-operation") as HTMLSelectElement | null)?.value;
+    const cashDirection = ($( "budget-adjust-cash-direction") as HTMLSelectElement | null)?.value;
+    const reason = ($( "budget-adjust-reason") as HTMLInputElement | null)?.value.trim();
+    const button = $("budget-adjust-submit") as HTMLButtonElement | null;
+    if (amount === null || compareMoney(amount, '0', currency()) <= 0 || cashAmount === null || compareMoney(cashAmount, '0', currency()) < 0 || !reason || !button) {
+      showError("Isi nominal dan alasan penyesuaian dengan benar.");
+      return;
+    }
+    const budgetDelta = operation === "decrease" ? `-${amount}` : amount;
+    const cashBudgetDelta = cashDirection === "decrease" ? `-${cashAmount}` : cashAmount;
+    button.disabled = true;
+    button.textContent = "Menyimpan…";
+    const eventId = latestDetail.event.id;
+    try {
+      const response = await fetchWithAuth(`/events/${encodeURIComponent(eventId)}/budget-adjustments`, {
+        method: "POST", body: JSON.stringify({ budgetDelta, cashBudgetDelta, reason }),
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(result.error || "Gagal menyesuaikan anggaran.");
+      void historyLoader.load(eventId, { force: true });
+      adjustmentForm.reset();
+      if (feedback) feedback.textContent = "Penyesuaian anggaran tersimpan di riwayat.";
+      window.dispatchEvent(new CustomEvent("refresh-event-detail"));
+    } catch (err) { showError(err instanceof Error ? err.message : "Gagal menyesuaikan anggaran."); }
+    finally { button.disabled = false; button.textContent = "Simpan penyesuaian"; }
   });
 
   window.addEventListener("update-budget-channels", (event: Event) => {
@@ -161,8 +318,8 @@
   .budget-channel-title { display: flex; align-items: center; gap: 9px; margin-bottom: 12px; }
   .budget-channel-title h3 { margin: 0; font: 600 .95rem var(--font-heading); }
   .budget-channel-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--primary); }
-  .budget-channel-dot.is-digital { background: #708b72; }
-  .budget-channel-line { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; padding: 9px 0; border-top: 1px solid var(--border-subtle); color: var(--text-muted); font-size: .83rem; }
+  .budget-channel-dot.is-digital { background: var(--secondary); }
+  .budget-channel-line { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; padding: 9px 0; border-top: 1px solid var(--border-subtle); color: var(--text-muted-readable); font-size: .83rem; }
   .budget-channel-line strong { color: var(--text-main); text-align: right; font: 500 .84rem var(--font-mono); }
   .budget-channel-line.budget-channel-remaining { color: var(--text-main); font-weight: 600; }
   .budget-channel-line.budget-channel-remaining strong { color: var(--primary); font-weight: 700; }
@@ -171,14 +328,27 @@
   .budget-digital-preview strong { min-height: 44px; display: flex; align-items: center; color: var(--text-main); font: 500 .95rem var(--font-mono); }
   .budget-channel-feedback, .budget-channel-error { margin: 0; font-size: .82rem; }
   .budget-channel-error { color: var(--status-error-text); }
-  @media (max-width: 760px) {
-    .budget-channel-form { grid-template-columns: 1fr 1fr; }
-    .budget-channel-form button { grid-column: 1 / -1; width: 100%; }
-  }
+  .budget-operation-details { border-top: 1px solid var(--border-subtle); padding-top: 14px; }
+  .budget-operation-details > summary { cursor: pointer; font-weight: 650; }
+  .budget-operation-form { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); align-items: end; gap: 12px; padding-top: 14px; }
+  .budget-operation-form .form-group { min-width: 0; margin: 0; }
+  .budget-operation-form button { min-height: 44px; }
+  .budget-history { border-top: 1px solid var(--border-subtle); padding-top: 12px; }
+  .budget-history h3 { margin: 0 0 8px; font-size: .95rem; }
+  .budget-history-list { display: grid; gap: 8px; margin: 0; padding-left: 22px; }
+  .budget-history-list li { color: var(--text-muted-readable); font-size: .82rem; line-height: 1.5; overflow-wrap: anywhere; }
+  @media (max-width: 760px) { .budget-operation-form { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
   @media (max-width: 560px) {
     .budget-channel-grid { grid-template-columns: 1fr; }
     .budget-channel-form { grid-template-columns: 1fr; }
     .budget-channel-form button { grid-column: auto; }
+    .budget-operation-form { grid-template-columns: 1fr; }
+    .budget-operation-form button { width: 100%; }
   }
   [hidden] { display: none !important; }
+</style>
+<style>
+  :global(.financial-inspector) .budget-channel-grid,
+  :global(.financial-inspector) .budget-channel-form,
+  :global(.financial-inspector) .budget-operation-form { grid-template-columns: minmax(0, 1fr); }
 </style>

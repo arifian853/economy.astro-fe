@@ -13,9 +13,9 @@ describe("event dashboard layout", () => {
     expect(settlement).toContain('event.status !== "completed"');
   });
 
-  test("places remaining funds first and emphasizes it with a full subtle green border", () => {
+  test("places remaining funds first and uses the shared mood container", () => {
     expect(page.indexOf('id="stat-card-remaining"')).toBeLessThan(page.indexOf('id="summary-expenses"'));
-    expect(styles).toMatch(/\.stat-card-remaining\s*\{[^}]*background:\s*#d8e4d4[^}]*border-color:\s*#a7b8a3/s);
+    expect(styles).toContain("background: var(--primary-container)");
     expect(styles).not.toMatch(/border-left\s*:/i);
   });
 });

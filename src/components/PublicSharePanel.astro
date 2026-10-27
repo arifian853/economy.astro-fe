@@ -17,8 +17,8 @@
 
   <div class="public-share-scope">
     <strong>Yang terlihat di tautan</strong>
-    <p>Nama item, nominal total, dan waktu transaksi.</p>
-    <small>Peserta, anggaran, catatan internal, metode pembayaran, serta settlement tetap privat. Aplikasi saat ini hanya mencatat pengeluaran.</small>
+    <p>Anggaran, sisa dana tunai/digital, nama item, nominal, dan waktu transaksi.</p>
+    <small>Peserta, catatan internal, bukti pengeluaran, serta settlement tetap privat. Aplikasi saat ini hanya mencatat pengeluaran.</small>
   </div>
 
   <div class="public-share-controls">
@@ -27,6 +27,7 @@
     <div class="public-share-actions">
       <button id="btn-enable-public-share" type="button" class="btn btn-primary">Aktifkan tautan publik</button>
       <button id="btn-copy-public-share" type="button" class="btn btn-outline" hidden>Salin tautan</button>
+      <a id="btn-open-public-share" class="btn btn-outline" target="_blank" rel="noopener noreferrer" hidden>Buka tautan</a>
       <button id="btn-disable-public-share" type="button" class="btn btn-ghost" hidden>Nonaktifkan</button>
     </div>
     <p id="public-share-feedback" class="public-share-feedback" role="status" aria-live="polite">Tautan belum dibuat; event ini hanya terlihat oleh akunmu.</p>
@@ -79,6 +80,8 @@
     }
     if (enableButton) enableButton.hidden = false;
     if (copyButton) copyButton.hidden = true;
+    const open = document.getElementById("btn-open-public-share");
+    if (open) { open.hidden = true; open.removeAttribute("href"); }
     if (disableButton) disableButton.hidden = true;
     if (feedback) {
       feedback.textContent = message;
@@ -92,6 +95,8 @@
       showError("Tautan publik tidak valid. Coba buat ulang tautan.");
       return;
     }
+    const open = document.getElementById("btn-open-public-share") as HTMLAnchorElement | null;
+    if (open) { open.href = url; open.hidden = false; }
     urlInput.value = url;
     urlInput.hidden = false;
     if (state) {
