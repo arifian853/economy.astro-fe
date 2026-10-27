@@ -26,6 +26,7 @@ export type EventItem = EventCurrency & InitialBudgetSnapshot & {
   id: string;
   name: string;
   eventDate: string;
+  eventEndDate?: string;
   budget: Money;
   cashBudget: Money | null;
   digitalBudget: Money | null;

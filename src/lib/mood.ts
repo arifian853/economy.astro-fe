@@ -22,11 +22,14 @@ export const moodBootstrap = `(() => {
   document.documentElement.style.colorScheme = mood.dark ? 'dark' : 'light';
   document.querySelector('meta[name="theme-color"]')?.setAttribute('content', mood.canvas);
 })();`;
-export function applyMood(value: string) {
+export function applyMood(value: string, persist = true) {
   const mood = moods.find(m => m.id === resolveMood(value))!;
   document.documentElement.dataset.mood = mood.id;
   document.documentElement.style.colorScheme = mood.dark ? 'dark' : 'light';
   document.querySelector('meta[name="theme-color"]')?.setAttribute('content', mood.canvas);
-  try { localStorage.setItem('economy-mood', mood.id); } catch { /* Session appearance still works. */ }
-  document.querySelectorAll<HTMLSelectElement>('[data-mood-select]').forEach(select => select.value = mood.id);
+  if (persist) {
+    try { localStorage.setItem('economy-mood', mood.id); } catch { /* Session appearance still works. */ }
+  }
+  document.querySelectorAll<HTMLInputElement>('[data-mood-radio]').forEach(radio => { radio.checked = radio.value === mood.id; });
+  document.dispatchEvent(new CustomEvent('economy:moodchange', { detail: { mood: mood.id } }));
 }

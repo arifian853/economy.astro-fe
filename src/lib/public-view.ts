@@ -1,6 +1,7 @@
 import { toMinor, minorDigits, type Money } from './money';
-import { convertReference, normalizeFx, validDate } from './fx';
+import { convertReference, normalizeFx } from './fx';
 import { validateInitialBudget } from './final-statement';
+import { normalizeDateRange } from './date-range';
 import type { EventCurrency, InitialBudgetSnapshot, TransactionFx } from '../types';
 export type PublicEventEntry = {
   type: 'expense'; name: string; amount: Money; source: 'cash' | 'digital'; transactionAt: string;
@@ -11,13 +12,13 @@ export type PublicBudgetSummary = {
   totalRemaining: Money; cashRemaining: Money | null; digitalRemaining: Money | null;
 };
 export type PublicEventData = {
-  event: { name: string; eventDate: string; status?: 'upcoming' | 'active' | 'completed'; updatedAt?: string } & InitialBudgetSnapshot & Omit<EventCurrency, 'currencyLocked'>;
-  budgetSummary: PublicBudgetSummary; entries: PublicEventEntry[];
+  event: { name: string; eventDate: string; eventEndDate: string; status?: 'upcoming' | 'active' | 'completed'; updatedAt?: string } & InitialBudgetSnapshot & Omit<EventCurrency, 'currencyLocked'>;
+  budgetSummary: PublicBudgetSummary; entries: PublicEventEntry[]; participants: string[];
 };
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
 // Public responses must match the backend projection. Fail closed on owner/private fields.
 const onlyKeys = (value: Record<string, unknown>, allowed: readonly string[]) => Object.keys(value).every(key => allowed.includes(key));
-const eventKeys = ['name', 'eventDate', 'status', 'updatedAt', 'initialBudget', 'initialBudgetKnown', 'currencyMode', 'baseCurrency', 'fxReferenceRateToIdr', 'fxReferenceDate', 'fxReferenceProvider'];
+const eventKeys = ['name', 'eventDate', 'eventEndDate', 'status', 'updatedAt', 'initialBudget', 'initialBudgetKnown', 'currencyMode', 'baseCurrency', 'fxReferenceRateToIdr', 'fxReferenceDate', 'fxReferenceProvider'];
 const summaryKeys = ['budget', 'cashBudget', 'digitalBudget', 'totalExpenses', 'cashExpenses', 'digitalExpenses', 'totalRemaining', 'cashRemaining', 'digitalRemaining'];
 const entryKeys = ['type', 'name', 'amount', 'source', 'transactionAt', 'fxRateToIdr', 'fxRateDate', 'fxRateProvider', 'idrEquivalent'];
 function money(value: unknown, currency: string, signed = false): Money {
@@ -29,12 +30,13 @@ function money(value: unknown, currency: string, signed = false): Money {
 }
 export function normalizePublicEvent(value: unknown): PublicEventData | null {
   try {
-    if (!isRecord(value) || !isRecord(value.event) || !isRecord(value.budgetSummary) || !Array.isArray(value.entries)) return null;
-    if (!onlyKeys(value, ['event', 'budgetSummary', 'entries']) || !onlyKeys(value.event, eventKeys) || !onlyKeys(value.budgetSummary, summaryKeys)) return null;
+    if (!isRecord(value) || !isRecord(value.event) || !isRecord(value.budgetSummary) || !Array.isArray(value.entries) || !Array.isArray(value.participants)) return null;
+    if (!onlyKeys(value, ['event', 'budgetSummary', 'entries', 'participants']) || !onlyKeys(value.event, eventKeys) || !onlyKeys(value.budgetSummary, summaryKeys)) return null;
     const rawEvent = value.event;
-    const { name, eventDate } = rawEvent;
-    if (typeof name !== 'string' || !name.trim() || !validDate(eventDate)) return null;
-    const event: PublicEventData['event'] = { name: name.trim(), eventDate };
+    const { name, eventDate, eventEndDate } = rawEvent;
+    if (typeof name !== 'string' || !name.trim() || typeof eventDate !== 'string' || typeof eventEndDate !== 'string') return null;
+    const dateRange = normalizeDateRange(eventDate, eventEndDate);
+    const event: PublicEventData['event'] = { name: name.trim(), eventDate: dateRange.start, eventEndDate: dateRange.end };
     const currency = rawEvent.baseCurrency === undefined ? 'IDR' : rawEvent.baseCurrency;
     if (typeof currency !== 'string') return null;
     minorDigits(currency);
@@ -93,6 +95,14 @@ export function normalizePublicEvent(value: unknown): PublicEventData | null {
     const entryTotal = entries.reduce((sum, e) => sum + m(e.amount), 0n);
     const entryCash = entries.filter(e => e.source === 'cash').reduce((sum, e) => sum + m(e.amount), 0n);
     if (entryTotal !== m(totalExpenses) || entryCash !== m(cashExpenses) || entryTotal - entryCash !== m(digitalExpenses)) return null;
-    return { event, budgetSummary: summary, entries };
+    if (value.participants.length > 100) return null;
+    const participants: string[] = [];
+    for (const name of value.participants) {
+      if (typeof name !== 'string') return null;
+      const trimmed = name.trim();
+      if (!trimmed || trimmed.length > 100) return null;
+      participants.push(trimmed);
+    }
+    return { event, budgetSummary: summary, entries, participants };
   } catch { return null; }
 }

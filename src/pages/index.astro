@@ -1,7 +1,8 @@
 ---
 import Layout from "../layouts/Layout.astro";
-import GoogleLoginButton from "../components/GoogleLoginButton.astro";
+import EconomyAccessPanel from "../components/EconomyAccessPanel.astro";
 import EventCard from "../components/EventCard.astro";
+import ArchiveEventCard from "../components/ArchiveEventCard.astro";
 import EventForm from "../components/EventForm.astro";
 ---
 
@@ -31,12 +32,7 @@ import EventForm from "../components/EventForm.astro";
           <p class="gate-footnote">Angka ilustrasi · bukan data pengguna</p>
         </div>
       </section>
-      <section class="login-access" aria-labelledby="login-access-title">
-        <h2 id="login-access-title">Masuk ke Economy</h2>
-        <p class="muted">Gunakan akun Google untuk membuka daftar event Anda.</p>
-        <GoogleLoginButton />
-        <p id="login-error" class="error-box" role="alert" hidden></p>
-      </section>
+      <EconomyAccessPanel />
     </div>
   </main>
 
@@ -87,6 +83,7 @@ import EventForm from "../components/EventForm.astro";
 
   <!-- Template Event Card untuk Client-Side Rendering -->
   <EventCard />
+  <ArchiveEventCard />
 
   <!-- Form Modal Dialog untuk Tambah & Edit Event -->
   <EventForm />
@@ -94,7 +91,8 @@ import EventForm from "../components/EventForm.astro";
   <script>
     import { supabase } from "../lib/supabase";
     import { fetchWithAuth } from "../lib/api";
-    import { formatCurrency, formatDate } from "../lib/currency";
+    import { formatCurrency } from "../lib/currency";
+    import { formatDateRange } from "../lib/date-range";
     import { subtractMoney, absMoney, compareMoney } from "../lib/money";
     import { approximateIdr, eventReference, referenceLabel } from "../lib/fx";
     import { getEventLifecycleView } from "../lib/event-lifecycle";
@@ -198,6 +196,7 @@ import EventForm from "../components/EventForm.astro";
       }
     }
 
+    let hasRenderedHomeEvents = false;
     function renderEvents(events: EventItem[]) {
       const grid = $("events-grid");
       if (!grid) return;
@@ -209,8 +208,9 @@ import EventForm from "../components/EventForm.astro";
       }
 
       const template = $("event-card-template") as HTMLTemplateElement | null;
-      if (!template) {
-        console.error("[Economy] Template event-card-template tidak ditemukan");
+      const archiveTemplate = $("archive-event-card-template") as HTMLTemplateElement | null;
+      if (!template || !archiveTemplate) {
+        console.error("[Economy] Template kartu event tidak ditemukan");
         return;
       }
 
@@ -232,15 +232,14 @@ import EventForm from "../components/EventForm.astro";
         const currency = ev.baseCurrency ?? 'IDR';
         const money = (amount: import('../lib/money').Money) => formatCurrency(amount, currency);
         const lifecycle = getEventLifecycleView(ev.status);
-        const clone = template.content.cloneNode(true) as DocumentFragment;
-        const article = clone.querySelector(".event-card");
-        if (article && lifecycle.isArchived) article.classList.add("event-card-archived");
+        const selectedTemplate = lifecycle.isArchived ? archiveTemplate : template;
+        const clone = selectedTemplate.content.cloneNode(true) as DocumentFragment;
 
         const nameEl = clone.querySelector(".event-name");
         if (nameEl) nameEl.textContent = ev.name;
 
         const dateEl = clone.querySelector(".event-date");
-        if (dateEl) dateEl.textContent = formatDate(ev.eventDate);
+        if (dateEl) dateEl.textContent = formatDateRange(ev.eventDate, ev.eventEndDate ?? ev.eventDate);
 
         const statusEl = clone.querySelector(".event-status");
         if (statusEl) {
@@ -330,6 +329,8 @@ import EventForm from "../components/EventForm.astro";
         lifecycleGroups.get(ev.status)?.appendChild(clone);
       });
 
+      grid.classList.toggle("home-events-entered", !hasRenderedHomeEvents);
+      hasRenderedHomeEvents = true;
       showEventState("grid");
     }
 
@@ -382,15 +383,19 @@ import EventForm from "../components/EventForm.astro";
   .center-screen { min-height: 70svh; display: grid; place-items: center; padding: 24px; }
   .card-sm { width: 100%; max-width: 440px; }
   .login-screen { padding: 32px 16px 64px; }
-  .login-panel { width: min(100%, 1200px); margin: auto; display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); gap: 64px; align-items: center; }
+    .login-panel { width: min(100%, 1200px); margin: auto; display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); gap: 64px; align-items: center; }
+  @media (prefers-reduced-motion: no-preference) {
+    #login-view:not([hidden]) .login-intro > * { animation: login-reveal var(--motion-layout) var(--ease-out-soft) both; }
+    #login-view:not([hidden]) .login-intro > :nth-child(2) { animation-delay: 40ms; }
+    #login-view:not([hidden]) .login-intro > :nth-child(3) { animation-delay: 80ms; }
+    #login-view:not([hidden]) .login-intro > :nth-child(4) { animation-delay: 120ms; }
+    #login-view:not([hidden]) .economy-access-panel { animation: login-reveal var(--motion-layout) var(--ease-out-soft) 120ms both; }
+  }
+  @keyframes login-reveal { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
   .login-intro { padding: 32px; }
   .login-intro h1 { font-size: clamp(32px, 4.2vw, 56px); line-height: 1.18; letter-spacing: -.04em; margin: 24px 0; font-weight: 500; }
   .login-intro h1 span { color: var(--primary); }
   .login-description { font-size: 18px; max-width: 36ch; color: var(--text-muted-readable); }
-  .login-access { padding: 32px; display: flex; flex-direction: column; align-items: stretch; gap: 16px; background: var(--bg-surface); border-radius: var(--radius-lg); }
-  .login-access h2 { font-size: 24px; font-weight: 500; }
-  .login-access p { margin: 0; }
-  .login-access :global(.google-button) { margin-top: 8px; }
   .gate-ledger { margin-top: 40px; padding: 24px; background: var(--primary-container); color: var(--on-primary-container); border-radius: var(--radius-lg); }
   .gate-ledger-head { display: flex; flex-wrap: wrap; gap: 12px; justify-content: space-between; padding-bottom: 28px; }
   .gate-remaining { display: block; font: 500 clamp(28px, 3vw, 40px) var(--font-heading); letter-spacing: -.04em; overflow-wrap: anywhere; }
@@ -410,6 +415,5 @@ import EventForm from "../components/EventForm.astro";
     .login-intro h1 { font-size: clamp(30px, 8vw, 44px); }
     .login-description { font-size: 16px; }
     .gate-ledger { margin-top: 24px; padding: 20px; }
-    .login-access { padding: 24px 20px; }
   }
 </style>

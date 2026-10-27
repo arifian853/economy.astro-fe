@@ -1,8 +1,8 @@
 import { expect, test } from 'bun:test';
 import { createPublicPoller, type PollEnvironment } from './public-polling';
 const payload = (status?: string) => ({
- event: { name: 'Local example', eventDate: '2026-10-27', ...(status ? { status } : {}), updatedAt: '2026-10-27T10:00:00Z' },
- budgetSummary: { budget: 100, cashBudget: null, digitalBudget: null, totalExpenses: 0, cashExpenses: 0, digitalExpenses: 0, totalRemaining: 100, cashRemaining: null, digitalRemaining: null }, entries: [],
+ event: { name: 'Local example', eventDate: '2026-10-27', eventEndDate: '2026-10-27', ...(status ? { status } : {}), updatedAt: '2026-10-27T10:00:00Z' },
+ budgetSummary: { budget: 100, cashBudget: null, digitalBudget: null, totalExpenses: 0, cashExpenses: 0, digitalExpenses: 0, totalRemaining: 100, cashRemaining: null, digitalRemaining: null }, entries: [], participants: ['Example'],
 });
 function fixture(request?: typeof fetch) {
  let visible = true, listener = () => {};
@@ -57,8 +57,8 @@ test('revocation clears access and stops retries', async () => {
  f.poller.start(); await flush(); expect(f.states.at(-1)).toBe('unavailable'); expect(f.timers.size).toBe(0); f.poller.stop();
 });
 test('international polling accepts exact currency metadata and freezes the final reference', async () => {
- const event = { name: 'International', eventDate: '2026-10-23', status: 'active', baseCurrency: 'SGD', currencyMode: 'international', fxReferenceRateToIdr: '12000.5', fxReferenceDate: '2026-10-23', fxReferenceProvider: 'Frankfurter v2' };
- const projection = { event, budgetSummary: { budget: '9007199254740993.01', cashBudget: null, digitalBudget: null, totalExpenses: '0.1', cashExpenses: '0.1', digitalExpenses: '0', totalRemaining: '9007199254740992.91', cashRemaining: null, digitalRemaining: null }, entries: [{ type: 'expense', name: 'Tea', amount: '0.1', source: 'cash', transactionAt: '2026-10-23T10:00:00Z', fxRateToIdr: '10000', fxRateDate: '2026-10-22', fxRateProvider: 'snapshot', idrEquivalent: '1000' }] };
+ const event = { name: 'International', eventDate: '2026-10-23', eventEndDate: '2026-10-24', status: 'active', baseCurrency: 'SGD', currencyMode: 'international', fxReferenceRateToIdr: '12000.5', fxReferenceDate: '2026-10-23', fxReferenceProvider: 'Frankfurter v2' };
+ const projection = { event, budgetSummary: { budget: '9007199254740993.01', cashBudget: null, digitalBudget: null, totalExpenses: '0.1', cashExpenses: '0.1', digitalExpenses: '0', totalRemaining: '9007199254740992.91', cashRemaining: null, digitalRemaining: null }, entries: [{ type: 'expense', name: 'Tea', amount: '0.1', source: 'cash', transactionAt: '2026-10-23T10:00:00Z', fxRateToIdr: '10000', fxRateDate: '2026-10-22', fxRateProvider: 'snapshot', idrEquivalent: '1000' }], participants: ['Maya'] };
  const f = fixture((async () => Response.json(projection)) as typeof fetch);
  f.poller.start(); await flush();
  expect(f.states.at(-1)).toBe('live');

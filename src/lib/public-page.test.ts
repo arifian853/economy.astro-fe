@@ -15,6 +15,15 @@ describe("public share page", () => {
     expect(page).not.toMatch(/hanya baca|hanya lihat|tetap privat|oversharing/i);
   });
 
+  test("shows the truthful total budget label, range, and participant names in the public flow", () => {
+    expect(page).toContain("Total anggaran");
+    expect(page).not.toContain("Anggaran akhir");
+    expect(page).toContain("public-participants");
+    expect(page).toContain("formatDateRange");
+    expect(page).toContain("eventEndDate");
+    expect(page).toContain("participants");
+  });
+
   test("gives the ledger heading breathing room above its divider", () => {
     expect(page).toMatch(/\.public-ledger-section-head\s*\{[^}]*padding:\s*22px\s+22px\s+14px/i);
   });

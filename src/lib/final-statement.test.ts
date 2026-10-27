@@ -18,11 +18,11 @@ const detail: EventDetail = {
 };
 const publicPayload = {
   event: {
-    name: 'Acara uji', eventDate: '2026-10-23', status: 'completed', currencyMode: 'international', baseCurrency: 'SGD',
+    name: 'Acara uji', eventDate: '2026-10-23', eventEndDate: '2026-10-23', status: 'completed', currencyMode: 'international', baseCurrency: 'SGD',
     fxReferenceRateToIdr: '12000.5', fxReferenceDate: '2026-10-23', fxReferenceProvider: 'Frankfurter v2',
   },
   budgetSummary: { budget: '100.01', cashBudget: '40', digitalBudget: '60.01', totalExpenses: '0.3', cashExpenses: '0.3', digitalExpenses: '0', totalRemaining: '99.71', cashRemaining: '39.7', digitalRemaining: '60.01' },
-  entries: [{ type: 'expense', name: 'Konsumsi', amount: '0.3', source: 'cash', transactionAt: '2026-10-23T11:00:00Z' }],
+  entries: [{ type: 'expense', name: 'Konsumsi', amount: '0.3', source: 'cash', transactionAt: '2026-10-23T11:00:00Z' }], participants: ['Ayu', 'Bima', 'Citra'],
 };
 
 describe('owner Final Statement', () => {
@@ -84,7 +84,7 @@ describe('public initial-budget projection and statement', () => {
   });
 
   test('old international and IDR responses are explicitly unknown without deriving any initial amount', () => {
-    const legacyIdr = { event: { name: 'Uji IDR', eventDate: '2026-10-23', status: 'completed' }, budgetSummary: { budget: 100, cashBudget: null, digitalBudget: null, totalExpenses: 0, cashExpenses: 0, digitalExpenses: 0, totalRemaining: 100, cashRemaining: null, digitalRemaining: null }, entries: [] };
+    const legacyIdr = { event: { name: 'Uji IDR', eventDate: '2026-10-23', eventEndDate: '2026-10-23', status: 'completed' }, budgetSummary: { budget: 100, cashBudget: null, digitalBudget: null, totalExpenses: 0, cashExpenses: 0, digitalExpenses: 0, totalRemaining: 100, cashRemaining: null, digitalRemaining: null }, entries: [], participants: [] };
     for (const payload of [publicPayload, legacyIdr]) {
       const view = normalizePublicEvent(payload);
       expect(view).not.toBeNull();
@@ -119,7 +119,7 @@ describe('public initial-budget projection and statement', () => {
     for (const patch of [{ baseCurrency: null }, { baseCurrency: 'XYZ' }, { baseCurrency: 'sgd' }, { currencyMode: 'domestic' }, { currency: 'USD' }, { initialBudgetCurrency: 'USD' }, { ownerId: 'private' }, { notes: 'private' }, { participants: [] }, { fxReferenceProvider: 'https://private.example/key' }]) {
       expect(normalizePublicEvent({ ...publicPayload, event: { ...publicPayload.event, ...patch } })).toBeNull();
     }
-    expect(normalizePublicEvent({ ...publicPayload, participants: [] })).toBeNull();
+    expect(normalizePublicEvent({ ...publicPayload, participants: [] })?.participants).toEqual([]);
     expect(normalizePublicEvent({ ...publicPayload, budgetSummary: { ...publicPayload.budgetSummary, reason: 'private' } })).toBeNull();
     for (const patch of [{ currency: 'USD' }, { baseCurrency: 'USD' }, { note: 'private' }, { evidence: [] }, { fxRateDate: '2026-10-23' }]) {
       expect(normalizePublicEvent({ ...publicPayload, entries: [{ ...publicPayload.entries[0], ...patch }] })).toBeNull();
@@ -133,10 +133,11 @@ test('owner and public statement renderers use the tested snapshot distinction a
   expect(owner).toContain('ownerFinalStatement(detail)');
   expect(owner).toContain('initialRow.hidden = initial.amount === null');
   expect(owner).toContain('id="report-initial-unavailable"');
-  expect(owner).toContain('Anggaran akhir');
+  expect(owner).toContain('Total anggaran');
   expect(owner).toContain('statement.settlement!');
   expect(page).toContain('initialBudgetStatement(view.event, currency)');
   expect(page).toContain('initialRow.hidden = !completed || initial.amount === null');
-  expect(page).toContain("completed ? 'Anggaran akhir' : 'Anggaran total'");
   expect(page).toContain('public-initial-unavailable');
+  expect(page).toContain('Total anggaran');
+  expect(page).not.toContain('Anggaran akhir');
 });

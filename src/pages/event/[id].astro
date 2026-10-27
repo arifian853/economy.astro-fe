@@ -160,7 +160,8 @@ import BudgetChannels from "../../components/BudgetChannels.astro";
   <script>
     import { supabase } from "../../lib/supabase";
     import { fetchWithAuth } from "../../lib/api";
-    import { formatCurrency, formatDate, formatDateTime, formatPaymentMethod } from "../../lib/currency";
+    import { formatCurrency, formatDateTime, formatPaymentMethod } from "../../lib/currency";
+    import { formatDateRange } from "../../lib/date-range";
     import { calculateBudgetChannels } from "../../lib/budget-channels";
     import { multiplyMoney, compareMoney, absMoney, moneyPercent } from "../../lib/money";
     import { approximateIdr, eventReference, referenceLabel } from "../../lib/fx";
@@ -220,7 +221,7 @@ import BudgetChannels from "../../components/BudgetChannels.astro";
       if (nameEl) nameEl.textContent = event.name;
 
       const dateEl = $("event-date");
-      if (dateEl) dateEl.textContent = formatDate(event.eventDate);
+      if (dateEl) dateEl.textContent = formatDateRange(event.eventDate, event.eventEndDate ?? event.eventDate);
 
       const statusEl = $("event-status");
       if (statusEl) {

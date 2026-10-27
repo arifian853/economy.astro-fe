@@ -1,20 +1,64 @@
 ---
 import { moods } from '../lib/mood';
+interface Props { id: string }
+const { id } = Astro.props;
 ---
-<label class="appearance-control">
-  <span class="appearance-dot" aria-hidden="true"></span>
-  <span class="sr-only">Appearance · Mood</span>
-  <select data-mood-select aria-label="Appearance · Mood">
-    {moods.map(mood => <option value={mood.id}>{mood.name}</option>)}
-  </select>
-</label>
+<details id={id} class="appearance-control" data-appearance-control>
+  <summary class="appearance-trigger" aria-controls={`${id}-panel`}>
+    <span class="appearance-dot" aria-hidden="true"></span>
+    <span class="appearance-trigger-label">Appearance</span>
+    <span class="appearance-current" data-appearance-current>Teal</span>
+    <svg class="appearance-chevron" viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="m5 7.5 5 5 5-5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+  </summary>
+  <div id={`${id}-panel`} class="appearance-panel" role="group" aria-label="Choose a mood">
+    <p class="appearance-title">Appearance</p>
+    <p class="appearance-subtitle">Choose a mood</p>
+    <fieldset class="appearance-options">
+      <legend class="sr-only">Mood</legend>
+      {moods.map(mood => <label class="appearance-option" for={`${id}-${mood.id}`}>
+        <input id={`${id}-${mood.id}`} class="appearance-radio" type="radio" name={`${id}-mood`} value={mood.id} data-mood-radio />
+        <span class="appearance-swatch" style={`--appearance-swatch:${mood.canvas}`} aria-hidden="true"></span>
+        <span class="appearance-option-name">{mood.name}</span>
+        <span class="appearance-check" aria-hidden="true"><svg viewBox="0 0 20 20" fill="none"><path d="m4 10 4 4 8-8" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+      </label>)}
+    </fieldset>
+  </div>
+</details>
 <script>
-  import { applyMood, resolveMood } from '../lib/mood';
-  document.querySelectorAll<HTMLSelectElement>('[data-mood-select]').forEach(select => {
-    select.value = resolveMood(document.documentElement.dataset.mood ?? null);
-    select.addEventListener('change', () => applyMood(select.value));
-  });
-  window.addEventListener('storage', event => {
-    if (event.key === 'economy-mood') applyMood(resolveMood(event.newValue));
+  import { applyMood, resolveMood, moods } from '../lib/mood';
+
+  document.querySelectorAll<HTMLDetailsElement>('[data-appearance-control]').forEach(details => {
+    const summary = details.querySelector('summary');
+    const current = details.querySelector<HTMLElement>('[data-appearance-current]');
+    const radios = [...details.querySelectorAll<HTMLInputElement>('[data-mood-radio]')];
+    const sync = (value: string | null) => {
+      const mood = resolveMood(value);
+      radios.forEach(radio => { radio.checked = radio.value === mood; });
+      if (current) current.textContent = moods.find(item => item.id === mood)?.name ?? 'Teal';
+    };
+    sync(document.documentElement.dataset.mood ?? null);
+    radios.forEach(radio => radio.addEventListener('change', () => {
+      if (!radio.checked) return;
+      applyMood(radio.value);
+      details.open = false;
+      summary?.focus();
+    }));
+    details.addEventListener('keydown', event => {
+      if (event.key === 'Escape' && details.open) {
+        event.preventDefault();
+        details.open = false;
+        summary?.focus();
+      }
+    });
+    document.addEventListener('pointerdown', event => {
+      if (details.open && event.target instanceof Node && !details.contains(event.target)) details.open = false;
+    });
+    window.addEventListener('storage', event => {
+      if (event.key === 'economy-mood') applyMood(resolveMood(event.newValue), false);
+    });
+    document.addEventListener('economy:moodchange', event => {
+      const mood = (event as CustomEvent<{ mood?: string }>).detail?.mood;
+      if (mood) sync(mood);
+    });
   });
 </script>

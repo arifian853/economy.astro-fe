@@ -34,7 +34,7 @@ const { title = "Economy", robots = "noindex, nofollow" } = Astro.props;
     <a href="#page-content" class="skip-link">Lewati ke konten</a>
     <header class="site-header"><div class="container site-header-inner">
       <a href="/" class="brand-link"><span class="brand-title">Economy<span class="brand-caption">Live Ledger</span></span></a>
-      <div class="header-tools"><slot name="account" /><AppearanceControl /></div>
+      <div class="header-tools"><slot name="account" /><AppearanceControl id="header-appearance" /></div>
     </div></header>
     <div id="page-content" tabindex="-1"><slot /></div>
   </body>

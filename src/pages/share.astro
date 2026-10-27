@@ -34,27 +34,31 @@ import Layout from "../layouts/Layout.astro";
       </section>
 
       <section class="public-overview" aria-label="Ringkasan anggaran">
-        <article class="public-total-remaining-card">
+        <div class="public-financial-hero">
           <span id="public-outcome-label" class="public-stat-label">Sisa anggaran</span>
           <strong id="public-total-remaining" class="public-total-value">—</strong>
-          <span id="public-remaining-caption" class="public-stat-caption">Setelah seluruh pengeluaran</span>
-        </article>
-        <article id="public-initial-row" class="public-stat-card" hidden>
-          <span class="public-stat-label">Anggaran awal</span>
-          <strong id="public-initial-budget" class="public-stat-value"></strong>
-        </article>
-        <p id="public-initial-unavailable" class="public-stat-caption" hidden></p>
-        <article class="public-stat-card">
-          <span id="public-budget-label" class="public-stat-label">Anggaran total</span>
-          <strong id="public-total-budget" class="public-stat-value">—</strong>
-          <span class="public-stat-caption">Dana event</span>
-        </article>
-        <article class="public-stat-card">
-          <span class="public-stat-label">Total pengeluaran</span>
-          <strong id="public-total-expenses" class="public-stat-value">—</strong>
-          <span id="public-entry-count" class="public-stat-caption">0 transaksi</span>
-        </article>
-        <p id="public-fx-state" class="form-hint" hidden></p>
+          <p id="public-remaining-caption" class="public-stat-caption">Setelah seluruh pengeluaran</p>
+          <p id="public-spent-caption" class="public-spent-caption"></p>
+          <progress id="public-budget-progress" class="public-budget-progress" max="100" value="0" aria-label="Persentase anggaran terpakai"></progress>
+        </div>
+        <div class="public-financial-support">
+          <article id="public-initial-row" class="public-financial-stat" hidden>
+            <span class="public-stat-label">Anggaran awal</span>
+            <strong id="public-initial-budget" class="public-stat-value"></strong>
+          </article>
+          <article class="public-financial-stat">
+            <span class="public-stat-label">Total anggaran</span>
+            <strong id="public-total-budget" class="public-stat-value">—</strong>
+            <span class="public-stat-caption">Dana event</span>
+          </article>
+          <article class="public-financial-stat">
+            <span class="public-stat-label">Total pengeluaran</span>
+            <strong id="public-total-expenses" class="public-stat-value">—</strong>
+            <span id="public-entry-count" class="public-stat-caption">0 transaksi</span>
+          </article>
+        </div>
+        <p id="public-initial-unavailable" class="public-initial-unavailable" hidden></p>
+        <p id="public-fx-state" class="form-hint public-fx-state" hidden></p>
       </section>
 
       <section class="public-channel-section" aria-labelledby="public-channel-title">
@@ -87,6 +91,17 @@ import Layout from "../layouts/Layout.astro";
         <p id="public-split-note" class="public-split-note" hidden></p>
       </section>
 
+      <section id="public-participants" class="public-participants-section" aria-labelledby="public-participants-title" hidden>
+        <div class="public-participants-heading">
+          <div>
+            <p class="public-page-kicker">Bersama</p>
+            <h2 id="public-participants-title">Peserta · <span id="public-participant-count">0</span></h2>
+          </div>
+          <button id="public-participant-toggle" class="btn btn-ghost btn-sm" type="button" aria-expanded="false" hidden></button>
+        </div>
+        <ul id="public-participant-list" class="public-participant-list"></ul>
+      </section>
+
       <section id="public-ledger" class="public-ledger-section" aria-labelledby="public-ledger-title" hidden>
         <div class="public-section-heading public-ledger-section-head">
           <div>
@@ -108,8 +123,10 @@ import Layout from "../layouts/Layout.astro";
   <script>
     import { eventReference, approximateIdr, referenceLabel } from "../lib/fx";
     import { compareMoney, type Money } from "../lib/money";
+    import { toMinor } from "../lib/money";
     import { parsePublicShareToken } from "../lib/public-share";
     import { formatCurrency } from "../lib/currency";
+    import { formatDateRange } from "../lib/date-range";
     import { createPublicPoller } from "../lib/public-polling";
     import { normalizePublicEvent } from "../lib/public-view";
     import { initialBudgetStatement } from "../lib/final-statement";
@@ -128,7 +145,7 @@ import Layout from "../layouts/Layout.astro";
     const splitNote = document.getElementById("public-split-note");
     const apiBase = (import.meta.env.PUBLIC_API_URL || "/api").replace(/\/$/, "");
     let currency = 'IDR';
-    let currentEvent: NonNullable<ReturnType<typeof normalizePublicEvent>>['event'] = { name: '', eventDate: '' };
+    let currentEvent: NonNullable<ReturnType<typeof normalizePublicEvent>>['event'] = { name: '', eventDate: '', eventEndDate: '' };
     const formatMoney = (amount: Money) => formatCurrency(amount, currency);
     const setMoney = (id: string, amount: Money | null) => {
       const element = document.getElementById(id);
@@ -152,6 +169,37 @@ import Layout from "../layouts/Layout.astro";
 
     const rows = new Map<string, HTMLLIElement>();
     let renderedOnce = false;
+    let participantsExpanded = false;
+    const renderParticipants = (participants: string[]) => {
+      const section = document.getElementById('public-participants');
+      const list = document.getElementById('public-participant-list');
+      const count = document.getElementById('public-participant-count');
+      const toggle = document.getElementById('public-participant-toggle') as HTMLButtonElement | null;
+      if (!section || !list || !count || !toggle) return;
+      section.hidden = participants.length === 0;
+      count.textContent = String(participants.length);
+      participantsExpanded = false;
+      list.replaceChildren(...participants.map((name, index) => {
+        const item = document.createElement('li');
+        item.className = 'public-participant-chip';
+        item.textContent = name;
+        if (index >= 3) item.hidden = true;
+        item.dataset.participantOverflow = String(index >= 3);
+        return item;
+      }));
+      const more = participants.length - 3;
+      toggle.hidden = more <= 0;
+      toggle.textContent = `+${more} lainnya`;
+      toggle.setAttribute('aria-expanded', 'false');
+    };
+    document.getElementById('public-participant-toggle')?.addEventListener('click', event => {
+      const button = event.currentTarget as HTMLButtonElement;
+      participantsExpanded = !participantsExpanded;
+      document.querySelectorAll<HTMLElement>('[data-participant-overflow="true"]').forEach(item => { item.hidden = !participantsExpanded; });
+      button.setAttribute('aria-expanded', String(participantsExpanded));
+      const hiddenCount = document.querySelectorAll('[data-participant-overflow="true"]').length;
+      button.textContent = participantsExpanded ? 'Tampilkan lebih sedikit' : `+${hiddenCount} lainnya`;
+    });
     const renderEntries = (entries: NonNullable<ReturnType<typeof normalizePublicEvent>>["entries"]) => {
       if (!entryList || !entryCount || !entryCountList || !emptyState || !ledger) return;
       const ordered: HTMLLIElement[] = [];
@@ -224,6 +272,16 @@ import Layout from "../layouts/Layout.astro";
       setMoney("public-digital-expenses", summary.digitalExpenses);
       setMoney("public-digital-remaining", summary.digitalRemaining);
       if (entryCount) entryCount.textContent = `${entryTotal} transaksi`;
+      const spentCaption = document.getElementById('public-spent-caption');
+      if (spentCaption) spentCaption.textContent = `${formatMoney(summary.totalExpenses)} digunakan dari ${formatMoney(summary.budget)}`;
+      const progress = document.getElementById('public-budget-progress') as HTMLProgressElement | null;
+      if (progress) {
+        const budgetMinor = toMinor(summary.budget, currency);
+        const spentMinor = toMinor(summary.totalExpenses, currency);
+        const basisPoints = budgetMinor > 0n ? spentMinor * 10000n / budgetMinor : 0n;
+        const bounded = basisPoints < 0n ? 0n : basisPoints > 10000n ? 10000n : basisPoints;
+        progress.value = Number(bounded) / 100;
+      }
       if (splitNote) {
         splitNote.hidden = summary.cashBudget !== null;
         splitNote.textContent = "Pembagian anggaran kas dan digital belum diatur.";
@@ -252,8 +310,7 @@ import Layout from "../layouts/Layout.astro";
         initialUnavailable.hidden = !completed || initial.unavailable === null;
         initialUnavailable.textContent = completed ? initial.unavailable ?? '' : '';
       }
-      const budgetLabel = document.getElementById('public-budget-label');
-      if (budgetLabel) budgetLabel.textContent = completed ? 'Anggaran akhir' : 'Anggaran total';
+
       if (previous?.event.baseCurrency !== view.event.baseCurrency) rows.clear();
       document.querySelector('.public-hero-mark')!.textContent = currency === 'IDR' ? 'Rp' : currency;
       const fxState = document.getElementById('public-fx-state');
@@ -264,13 +321,14 @@ import Layout from "../layouts/Layout.astro";
       if (content) content.hidden = false;
       if (eventName && eventName.textContent !== view.event.name) eventName.textContent = view.event.name;
       document.title = `${view.event.name} — Economy`;
-      if (eventDate && eventDate.dateTime !== view.event.eventDate) {
+      if (eventDate && (eventDate.dateTime !== view.event.eventDate || eventDate.dataset.endDate !== view.event.eventEndDate)) {
         eventDate.dateTime = view.event.eventDate;
-        const date = new Date(`${view.event.eventDate}T00:00:00+07:00`);
-        eventDate.textContent = Number.isNaN(date.getTime()) ? view.event.eventDate : new Intl.DateTimeFormat('id-ID', { dateStyle: 'long', timeZone: 'Asia/Jakarta' }).format(date);
+        eventDate.dataset.endDate = view.event.eventEndDate;
+        eventDate.textContent = formatDateRange(view.event.eventDate, view.event.eventEndDate);
       }
       if (metadataChanged || JSON.stringify(previous?.budgetSummary) !== JSON.stringify(view.budgetSummary)) renderBudget(view.budgetSummary, view.entries.length);
       if (metadataChanged || JSON.stringify(previous?.entries) !== JSON.stringify(view.entries)) renderEntries(view.entries);
+      if (metadataChanged || JSON.stringify(previous?.participants) !== JSON.stringify(view.participants)) renderParticipants(view.participants);
       const label = document.getElementById('public-statement-label');
       if (label) label.textContent = view.event.status === 'completed' ? 'Final Statement' : 'Live Ledger';
       if (content) content.dataset.status = view.event.status ?? 'unknown';
@@ -286,6 +344,7 @@ import Layout from "../layouts/Layout.astro";
           const indicator = document.getElementById('public-live-state');
           const labels = { loading: 'Menghubungkan…', live: 'Live · diperbarui otomatis', final: 'Final · event selesai', paused: 'Pembaruan dijeda', unavailable: 'Tautan tidak tersedia' };
           if (indicator && indicator.textContent !== labels[state]) indicator.textContent = labels[state];
+          if (indicator) indicator.dataset.live = String(state === 'live');
           if (state === 'live' || state === 'final') {
             lastReceived = new Intl.DateTimeFormat('id-ID', { timeStyle: 'short', timeZone: 'Asia/Jakarta' }).format(new Date());
           }
@@ -401,10 +460,49 @@ import Layout from "../layouts/Layout.astro";
     @keyframes ledger-enter { from { opacity: 0; transform: translateY(6px); background: var(--primary-container); } to { opacity: 1; transform: translateY(0); } }
     @media (max-width: 760px) {
       #public-content { grid-template-columns: minmax(0, 1fr); }
-      .public-ledger-section { grid-row: 3; }
-      .public-channel-section { grid-column: 1; grid-row: 4; }
-      .public-overview { padding: 24px 20px; }
-      .public-stat-card { min-width: 0; padding-right: 8px; }
+      .public-ledger-section { grid-column: 1; grid-row: 4; }
+      .public-channel-section { grid-column: 1; grid-row: 5; }
+      .public-participants-section { grid-column: 1; grid-row: 3; }
+      .public-overview { padding: 20px; }
+    }
+    @media (max-width: 430px) {
+      .public-financial-support { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px 10px; }
+      .public-financial-stat:first-child:nth-last-child(3) { grid-column: 1 / -1; }
+      .public-participant-chip { max-width: 100%; overflow-wrap: anywhere; }
+    }
+    .public-overview { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0; grid-column: 1 / -1; margin: 0; padding: 0; border: 0; border-radius: 0; background: transparent; }
+    .public-financial-hero { display: grid; gap: 6px; padding: clamp(22px, 3vw, 34px); border: 1px solid var(--border-subtle); border-radius: var(--radius-lg); background: var(--primary-container); color: var(--on-primary-container); }
+    .public-financial-hero .public-stat-label, .public-financial-hero .public-stat-caption, .public-spent-caption { margin: 0; color: var(--on-primary-container); }
+    .public-financial-hero .public-stat-label { font-size: 13px; letter-spacing: .04em; }
+    .public-financial-hero .public-total-value { font-size: clamp(34px, 6vw, 58px); line-height: 1.08; letter-spacing: -.04em; }
+    .public-spent-caption { margin-top: 4px; font-size: 14px; font-variant-numeric: tabular-nums; }
+    .public-budget-progress { width: 100%; height: 7px; margin-top: 8px; border: 0; border-radius: var(--radius-full); accent-color: var(--primary); background: color-mix(in srgb, var(--on-primary-container) 18%, transparent); }
+    .public-budget-progress::-webkit-progress-bar { border-radius: var(--radius-full); background: color-mix(in srgb, var(--on-primary-container) 18%, transparent); }
+    .public-budget-progress::-webkit-progress-value { border-radius: var(--radius-full); background: var(--primary); transition: width var(--motion-layout, 300ms) var(--ease-out-soft, ease); }
+    .public-budget-progress::-moz-progress-bar { border-radius: var(--radius-full); background: var(--primary); }
+    .public-financial-support { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 20px; padding: 18px 4px 12px; }
+    .public-financial-stat { display: grid; align-content: start; gap: 5px; min-width: 0; }
+    .public-financial-stat .public-stat-label { margin: 0; color: var(--text-muted-readable); font-size: 12px; }
+    .public-financial-stat .public-stat-value { color: var(--text-main); font: 500 clamp(17px, 2vw, 21px)/1.3 var(--font-heading); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+    .public-financial-stat .public-stat-caption { margin: 0; color: var(--text-muted-readable); font-size: 12px; }
+    .public-initial-unavailable, .public-fx-state { margin: 0 4px 10px; color: var(--text-muted-readable); font-size: 12px; }
+    .public-participants-section { grid-column: 1 / -1; grid-row: 3; display: flex; align-items: center; justify-content: space-between; gap: 18px; min-width: 0; padding: 15px 18px; border: 1px solid var(--border-subtle); border-radius: var(--radius-md); background: var(--bg-surface-variant); }
+    .public-participants-heading { display: flex; align-items: center; justify-content: space-between; gap: 14px; min-width: 0; }
+    .public-participants-heading .public-page-kicker { margin-bottom: 2px; }
+    .public-participants-heading h2 { margin: 0; white-space: nowrap; font: 500 14px/1.4 var(--font-heading); }
+    .public-participant-list { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 7px; min-width: 0; margin: 0; padding: 0; list-style: none; }
+    .public-participant-chip { display: inline-flex; align-items: center; min-height: 32px; max-width: 100%; padding: 5px 11px; border: 1px solid var(--border-subtle); border-radius: var(--radius-full); background: var(--bg-surface); color: var(--text-main); font-size: 13px; overflow-wrap: anywhere; }
+    .public-participants-section #public-participant-toggle { flex: 0 0 auto; min-height: 36px; padding: 6px 10px; }
+    .public-ledger-section { grid-column: 1; grid-row: 4; }
+    .public-channel-section { grid-column: 2; grid-row: 4; }
+    .public-entry-row { transition: background-color var(--motion-fast, 150ms) ease; }
+    .ledger-new-entry { animation: ledger-enter var(--motion-layout, 300ms) var(--ease-out-soft, ease); }
+    @keyframes ledger-enter { from { opacity: 0; transform: translateY(7px); background: var(--primary-container); } to { opacity: 1; transform: translateY(0); background: transparent; } }
+    .public-live-state[data-live="true"] { animation: public-live-pulse 2.4s ease-in-out infinite; }
+    @keyframes public-live-pulse { 50% { opacity: .62; } }
+    @media (prefers-reduced-motion: reduce) {
+      .public-budget-progress::-webkit-progress-value { transition: none; }
+      .ledger-new-entry, .public-live-state[data-live="true"] { animation: none; }
     }
   </style>
 </Layout>

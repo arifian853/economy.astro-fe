@@ -1,0 +1,30 @@
+---
+import GoogleLoginButton from './GoogleLoginButton.astro';
+---
+<section class="economy-access-panel" aria-labelledby="login-access-title">
+  <p class="economy-access-kicker">Akses privat</p>
+  <h2 id="login-access-title">Masuk ke Economy</h2>
+  <p class="economy-access-copy">Gunakan akun Google untuk membuka daftar event dan laporan keuanganmu.</p>
+  <GoogleLoginButton />
+  <div class="economy-access-privacy">
+    <span class="economy-access-lock" aria-hidden="true">
+      <svg viewBox="0 0 24 24" fill="none"><rect x="5" y="10" width="14" height="11" rx="2" stroke="currentColor" stroke-width="1.7"/><path d="M8 10V7a4 4 0 0 1 8 0v3" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
+    </span>
+    <div><strong>Private by default</strong><span>Share only when you choose.</span></div>
+  </div>
+  <p id="login-error" class="error-box" role="alert" hidden></p>
+</section>
+<style>
+  .economy-access-panel { display: flex; flex-direction: column; align-items: stretch; gap: 16px; min-width: 0; padding: clamp(24px, 3.4vw, 40px); border: 1px solid var(--border-subtle); border-radius: var(--radius-lg); background: var(--bg-surface-variant); }
+  .economy-access-kicker { margin: 0; color: var(--primary); font-size: 12px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
+  .economy-access-panel h2 { font: 500 clamp(22px, 2.5vw, 28px)/1.25 var(--font-heading); }
+  .economy-access-copy { margin: 0; max-width: 38ch; color: var(--text-muted-readable); font-size: 15px; line-height: 1.55; }
+  .economy-access-panel :global(.google-button) { width: 100%; min-height: 52px; margin-top: 5px; border-color: var(--border-active); background: var(--bg-surface); color: var(--text-main); }
+  .economy-access-panel :global(.google-button:hover) { background: var(--bg-surface-hover); }
+  .economy-access-privacy { display: flex; align-items: flex-start; gap: 12px; padding-top: 16px; border-top: 1px solid var(--border-subtle); }
+  .economy-access-lock { display: grid; place-items: center; width: 36px; height: 36px; flex: 0 0 36px; border: 1px solid var(--border-subtle); border-radius: var(--radius-sm); background: var(--bg-surface); color: var(--primary); }
+  .economy-access-lock svg { width: 19px; height: 19px; }
+  .economy-access-privacy div { display: grid; gap: 2px; min-width: 0; }
+  .economy-access-privacy strong { font-size: 13px; font-weight: 600; }
+  .economy-access-privacy span:not(.economy-access-lock) { color: var(--text-muted-readable); font-size: 13px; }
+</style>

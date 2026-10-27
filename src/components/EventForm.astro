@@ -1,5 +1,7 @@
 ---
 import AppearanceControl from "./AppearanceControl.astro";
+import CurrencyCombobox from "./CurrencyCombobox.astro";
+import EventDateRangePicker from "./EventDateRangePicker.astro";
 // Komponen Form Modal untuk Tambah dan Edit Event
 ---
 
@@ -10,7 +12,7 @@ import AppearanceControl from "./AppearanceControl.astro";
       <button type="button" id="btn-close-modal" class="btn btn-ghost btn-sm close-btn" aria-label="Tutup"><svg class="ui-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button>
     </div>
 
-    <AppearanceControl />
+    <AppearanceControl id="event-form-appearance" />
     <form id="event-form" class="modal-form" novalidate>
       <input type="hidden" id="event-form-id" value="" />
 
@@ -29,13 +31,8 @@ import AppearanceControl from "./AppearanceControl.astro";
 
       <div class="form-row-2">
         <div class="form-group">
-          <label for="event-input-date" class="form-label">Tanggal Event *</label>
-          <input
-            type="date"
-            id="event-input-date"
-            class="form-control"
-            required
-          />
+          <label for="event-date-range-trigger" class="form-label">Rentang tanggal *</label>
+          <EventDateRangePicker id="event-date-range" startId="event-input-date" endId="event-input-end-date" />
         </div>
 
         <div class="form-group">
@@ -49,15 +46,15 @@ import AppearanceControl from "./AppearanceControl.astro";
 
       <fieldset class="currency-fields">
         <legend>Mata uang event</legend>
-        <div class="form-group">
-          <label for="event-currency-mode" class="form-label">Domestic / International</label>
-          <select id="event-currency-mode" class="form-control"><option value="domestic">Domestic · Indonesia (IDR)</option><option value="international">International</option></select>
+        <input type="hidden" id="event-currency-mode" value="domestic" />
+        <div class="currency-mode-choice" role="radiogroup" aria-label="Cakupan mata uang">
+          <button type="button" class="currency-mode-option is-selected" role="radio" aria-checked="true" data-currency-mode="domestic">Domestic</button>
+          <button type="button" class="currency-mode-option" role="radio" aria-checked="false" data-currency-mode="international">International</button>
         </div>
-        <div id="event-currency-picker" hidden>
-          <label for="event-currency-search" class="form-label">Cari mata uang</label>
-          <input id="event-currency-search" class="form-control" type="search" placeholder="Kode atau nama mata uang" autocomplete="off" aria-controls="event-base-currency" />
-          <label for="event-base-currency" class="form-label">Mata uang utama</label>
-          <select id="event-base-currency" class="form-control" aria-describedby="event-currency-state"></select>
+        <p id="domestic-currency-description" class="form-hint">IDR · Indonesian Rupiah. Event domestik selalu menggunakan rupiah.</p>
+        <div id="event-currency-picker" class="currency-combobox-field" hidden>
+          <label class="form-label" for="event-currency-combobox-currency-input">Mata uang utama</label>
+          <CurrencyCombobox id="event-currency-combobox" label="Mata uang utama" />
         </div>
         <p id="event-currency-state" class="form-hint" role="status">Domestic tetap menggunakan IDR.</p>
         <button type="button" id="event-currency-retry" class="btn btn-ghost btn-sm" hidden>Muat ulang mata uang</button>
@@ -124,6 +121,7 @@ import AppearanceControl from "./AppearanceControl.astro";
   import { fetchWithAuth } from "../lib/api";
   import type { EventItem, EventDetail } from "../types";
   import { formatLocalDateInput } from "../lib/date";
+  import { formatDateRange, normalizeDateRange } from "../lib/date-range";
   import { formatMoneyValue, formatMoneyInputState, parseMoneyInput } from "../lib/money-input";
 
   import { compareMoney, minorDigits } from "../lib/money";
@@ -136,6 +134,12 @@ import AppearanceControl from "./AppearanceControl.astro";
   const idInput = document.getElementById("event-form-id") as HTMLInputElement;
   const nameInput = document.getElementById("event-input-name") as HTMLInputElement;
   const dateInput = document.getElementById("event-input-date") as HTMLInputElement;
+  const dateEndInput = document.getElementById("event-input-end-date") as HTMLInputElement;
+  const updateDateRangeDisplay = () => {
+    const value = document.querySelector<HTMLElement>('#event-date-range .range-value');
+    if (!value || !dateInput.value || !dateEndInput.value) return;
+    try { value.textContent = formatDateRange(dateInput.value, dateEndInput.value); } catch { value.textContent = 'Pilih tanggal'; }
+  };
   const statusInput = document.getElementById("event-input-status") as HTMLSelectElement;
   const budgetInput = document.getElementById("event-input-budget") as HTMLInputElement;
   const participantsInput = document.getElementById("event-input-participants") as HTMLTextAreaElement;
@@ -143,23 +147,36 @@ import AppearanceControl from "./AppearanceControl.astro";
   const errorBox = document.getElementById("event-form-error") as HTMLDivElement;
   const submitBtn = document.getElementById("btn-submit-event") as HTMLButtonElement;
 
-  const modeInput = document.getElementById('event-currency-mode') as HTMLSelectElement;
-  const currencyInput = document.getElementById('event-base-currency') as HTMLSelectElement;
-  const currencySearch = document.getElementById('event-currency-search') as HTMLInputElement;
+  const modeInput = document.getElementById('event-currency-mode') as HTMLInputElement;
   const currencyState = document.getElementById('event-currency-state')!;
   const retryCurrencies = document.getElementById('event-currency-retry')!;
   const acknowledgment = document.getElementById('currency-change-ack') as HTMLInputElement;
+  const currencyComboboxId = 'event-currency-combobox';
   let currencies: CurrencyInfo[] = [];
   let editing: EventDetail['event'] | null = null;
   let locked = false;
   let selectedCurrency = 'IDR';
   let openGeneration = 0;
   const currency = () => modeInput.value === 'domestic' ? 'IDR' : selectedCurrency;
+  const syncCurrencyControls = () => {
+    const international = modeInput.value === 'international';
+    document.getElementById('event-currency-picker')!.hidden = !international;
+    document.getElementById('domestic-currency-description')!.hidden = international;
+    document.querySelectorAll<HTMLButtonElement>('[data-currency-mode]').forEach(button => {
+      const selected = button.dataset.currencyMode === modeInput.value;
+      button.disabled = locked;
+      button.setAttribute('aria-checked', String(selected));
+      button.classList.toggle('is-selected', selected);
+    });
+    const optionList = [...currencies];
+    if (editing && selectedCurrency && !optionList.some(item => item.code === selectedCurrency)) {
+      optionList.push({ code: selectedCurrency, name: `${selectedCurrency} · mata uang tersimpan`, symbol: selectedCurrency, minorUnits: minorDigits(selectedCurrency) });
+    }
+    document.dispatchEvent(new CustomEvent('economy:currency-options', { detail: { id: currencyComboboxId, options: optionList } }));
+    document.dispatchEvent(new CustomEvent('economy:currency-value', { detail: { id: currencyComboboxId, value: selectedCurrency, disabled: locked || !optionList.length } }));
+  };
   const updateCurrency = () => {
-    document.getElementById('event-currency-picker')!.hidden = modeInput.value !== 'international';
-    modeInput.disabled = locked;
-    currencySearch.disabled = locked || !currencies.length;
-    currencyInput.disabled = locked || !currencies.length;
+    syncCurrencyControls();
     currencyState.textContent = locked ? 'Mata uang terkunci setelah transaksi pertama, termasuk jika transaksi dihapus.'
       : !currencies.length ? 'Daftar mata uang belum tersedia. Domestic IDR tetap dapat digunakan; mata uang event lama tetap dipertahankan.'
       : 'Mata uang dapat diubah sebelum transaksi pertama.';
@@ -180,34 +197,39 @@ import AppearanceControl from "./AppearanceControl.astro";
       catch { document.getElementById('currency-change-notice')!.textContent = 'Anggaran/alokasi lama tidak dapat dinyatakan dalam pecahan mata uang ini. Pilih mata uang lain.'; }
     }
   };
-  const populateCurrencies = () => {
-    currencyInput.replaceChildren();
-    const query = currencySearch.value.trim().toLocaleLowerCase();
-    const filtered = currencies.filter(item => `${item.code} ${item.name}`.toLocaleLowerCase().includes(query) || item.code === selectedCurrency);
-    for (const item of filtered) currencyInput.add(new Option(`${item.code} · ${item.name}`, item.code));
-    if (!currencies.some(item => item.code === selectedCurrency) && editing) currencyInput.add(new Option(`${selectedCurrency} · mata uang tersimpan`, selectedCurrency));
-    currencyInput.value = selectedCurrency;
-  };
+  const populateCurrencies = () => syncCurrencyControls();
   const loadCurrencies = async () => {
     retryCurrencies.hidden = true;
     try { currencies = normalizeCurrencies(await fetchFx('currencies')); }
     catch { currencies = []; retryCurrencies.hidden = false; }
     populateCurrencies(); updateCurrency();
   };
-  currencySearch.addEventListener('input', populateCurrencies);
   retryCurrencies.addEventListener('click', () => { void loadCurrencies(); });
-  currencyInput.addEventListener('change', () => {
-    selectedCurrency = currencyInput.value;
+  const modeButtons = [...document.querySelectorAll<HTMLButtonElement>('[data-currency-mode]')];
+  modeButtons.forEach((button, index) => {
+    button.addEventListener('click', () => {
+      if (locked || !button.dataset.currencyMode || button.dataset.currencyMode === modeInput.value) return;
+      modeInput.value = button.dataset.currencyMode;
+      acknowledgment.checked = false;
+      if (!editing) budgetInput.value = '';
+      if (modeInput.value === 'international' && !currencies.some(item => item.code === selectedCurrency)) selectedCurrency = currencies[0]?.code ?? '';
+      updateCurrency();
+    });
+    button.addEventListener('keydown', event => {
+      if (!['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(event.key) || locked) return;
+      event.preventDefault();
+      const direction = event.key === 'ArrowLeft' || event.key === 'ArrowUp' ? -1 : 1;
+      modeButtons[(index + direction + modeButtons.length) % modeButtons.length]?.click();
+      modeButtons[(index + direction + modeButtons.length) % modeButtons.length]?.focus();
+    });
+  });
+  document.addEventListener('economy:currency-selected', event => {
+    const detail = (event as CustomEvent<{ id?: string; currency?: CurrencyInfo }>).detail;
+    if (detail?.id !== currencyComboboxId || !detail.currency || !currencies.some(item => item.code === detail.currency!.code)) return;
+    selectedCurrency = detail.currency.code;
     acknowledgment.checked = false;
-    // A newly entered budget must be entered again after a currency switch.
     if (!editing) budgetInput.value = '';
     updateCurrency();
-  });
-  modeInput.addEventListener('change', () => {
-    acknowledgment.checked = false;
-    if (!editing) budgetInput.value = '';
-    if (modeInput.value === 'international' && !currencies.some(item => item.code === selectedCurrency)) selectedCurrency = currencies[0]?.code ?? '';
-    populateCurrencies(); updateCurrency();
   });
 
   const formatMoneyField = (input: HTMLInputElement, inputType?: string) => {
@@ -263,7 +285,6 @@ import AppearanceControl from "./AppearanceControl.astro";
     locked = false;
     selectedCurrency = detail.event?.baseCurrency ?? 'IDR';
     modeInput.value = detail.event?.currencyMode ?? 'domestic';
-    currencySearch.value = '';
     submitBtn.disabled = false;
     populateCurrencies(); updateCurrency();
     void loadCurrencies();
@@ -273,6 +294,8 @@ import AppearanceControl from "./AppearanceControl.astro";
       idInput.value = "";
       // Set default tanggal hari ini
       dateInput.value = formatLocalDateInput(new Date());
+      dateEndInput.value = dateInput.value;
+      updateDateRangeDisplay();
       statusInput.value = "upcoming";
       budgetInput.disabled = false;
       const budgetHint = document.getElementById("budget-hint");
@@ -285,6 +308,8 @@ import AppearanceControl from "./AppearanceControl.astro";
       idInput.value = ev.id;
       nameInput.value = ev.name;
       dateInput.value = ev.eventDate;
+      dateEndInput.value = ev.eventEndDate ?? ev.eventDate;
+      updateDateRangeDisplay();
       statusInput.value = ev.status;
       editing = ev;
       locked = true; // A fresh owner read decides whether edits are allowed.
@@ -306,6 +331,9 @@ import AppearanceControl from "./AppearanceControl.astro";
           const data: EventDetail = await res.json();
           if (generation !== openGeneration || !dialog.open) return;
           editing = data.event;
+          dateInput.value = data.event.eventDate;
+          dateEndInput.value = data.event.eventEndDate ?? data.event.eventDate;
+          updateDateRangeDisplay();
           locked = !!data.event.currencyLocked || data.transactions.length > 0 || data.event.status === 'completed';
           selectedCurrency = data.event.baseCurrency ?? 'IDR';
           modeInput.value = data.event.currencyMode ?? 'domestic';
@@ -328,6 +356,7 @@ import AppearanceControl from "./AppearanceControl.astro";
 
     const name = nameInput.value.trim();
     const eventDate = dateInput.value;
+    const eventEndDate = dateEndInput.value || eventDate;
     const budget = parseMoneyInput(budgetInput.value, currency());
     const status = statusInput.value as "upcoming" | "active";
     const notes = notesInput.value.trim() || null;
@@ -346,9 +375,10 @@ import AppearanceControl from "./AppearanceControl.astro";
       return;
     }
 
-    if (!eventDate) {
-      showError("Tanggal event harus diisi.");
-      dateInput.focus();
+    try { normalizeDateRange(eventDate, eventEndDate); }
+    catch (error) {
+      showError((error as Error).message || "Rentang tanggal event tidak valid.");
+      document.getElementById("event-date-range-trigger")?.focus();
       return;
     }
 
@@ -381,6 +411,7 @@ import AppearanceControl from "./AppearanceControl.astro";
       const payload = {
         name,
         eventDate,
+        eventEndDate,
         budget: isEdit ? undefined : budget,
         ...(!isEdit || changed ? { currencyMode: modeInput.value, baseCurrency: currency() } : {}),
         status,

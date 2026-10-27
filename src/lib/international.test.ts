@@ -52,12 +52,13 @@ test('currency changes explicitly disclose retained budgets and reject unreprese
 
 import { normalizePublicEvent } from './public-view';
 const publicInternational = {
-  event: { name: 'Singapore', eventDate: '2026-10-23', status: 'completed', updatedAt: '2026-10-23T12:00:00Z', currencyMode: 'international', baseCurrency: 'SGD', fxReferenceRateToIdr: '12000.5', fxReferenceDate: '2026-10-23', fxReferenceProvider: 'Frankfurter v2' },
+  event: { name: 'Singapore', eventDate: '2026-10-23', eventEndDate: '2026-10-23', status: 'completed', updatedAt: '2026-10-23T12:00:00Z', currencyMode: 'international', baseCurrency: 'SGD', fxReferenceRateToIdr: '12000.5', fxReferenceDate: '2026-10-23', fxReferenceProvider: 'Frankfurter v2' },
   budgetSummary: { budget: '1', cashBudget: '0.5', digitalBudget: '0.5', totalExpenses: '0.3', cashExpenses: '0.1', digitalExpenses: '0.2', totalRemaining: '0.7', cashRemaining: '0.4', digitalRemaining: '0.3' },
   entries: [
     { type: 'expense', name: 'Cash', amount: '0.1', source: 'cash', transactionAt: '2026-10-23T11:00:00Z', fxRateToIdr: '12000.5', fxRateDate: '2026-10-22', fxRateProvider: 'Frankfurter v2', idrEquivalent: '999999' },
     { type: 'expense', name: 'Digital', amount: '0.2', source: 'digital', transactionAt: '2026-10-23T12:00:00Z', fxRateToIdr: null, fxRateDate: null, fxRateProvider: null, idrEquivalent: null },
   ],
+  participants: [],
 };
 test('public international projection preserves frozen currency, uses snapshots and rejects private fields', () => {
   const result = normalizePublicEvent(publicInternational);
