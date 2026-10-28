@@ -116,8 +116,19 @@ import AppearanceControl from "./AppearanceControl.astro";
         <div class="tx-evidence-fields">
           <div class="form-group">
             <label for="tx-input-evidence-file" class="form-label">Foto / file bukti</label>
-            <input id="tx-input-evidence-file" class="form-control" type="file" accept="image/jpeg,image/png,image/webp,application/pdf" />
-            <span class="form-hint">JPG, PNG, WebP, PDF · maks. 12 MiB. Disimpan privat.</span>
+            <div class="evidence-upload-control">
+              <input id="tx-input-evidence-file" type="file" accept="image/jpeg,image/png,image/webp,application/pdf" hidden />
+              <div class="evidence-file-actions">
+                <button type="button" id="tx-evidence-file-pick" class="btn btn-outline evidence-file-pick" aria-label="Pilih file bukti" aria-describedby="tx-evidence-file-name tx-evidence-file-hint tx-evidence-file-error" aria-controls="tx-input-evidence-file">
+                  <svg class="ui-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 16V4m0 0L7 9m5-5 5 5"/><path d="M5 14v5a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-5"/></svg>
+                  <span id="tx-evidence-file-pick-label">Pilih file</span>
+                </button>
+                <p id="tx-evidence-file-name" class="evidence-file-name" role="status" aria-live="polite" aria-atomic="true">Belum ada file dipilih</p>
+                <button type="button" id="tx-evidence-file-clear" class="btn btn-ghost btn-sm evidence-file-clear" aria-label="Hapus file bukti terpilih" hidden>Hapus</button>
+              </div>
+              <span id="tx-evidence-file-hint" class="form-hint">JPG, PNG, WebP, PDF · maks. 12 MiB. Disimpan privat.</span>
+              <p id="tx-evidence-file-error" class="evidence-file-error" role="alert" hidden></p>
+            </div>
           </div>
           <div class="form-group">
             <label for="tx-input-evidence-url" class="form-label">Tautan bukti</label>
@@ -134,6 +145,21 @@ import AppearanceControl from "./AppearanceControl.astro";
     </form>
   </div>
 </dialog>
+
+<style>
+  .evidence-upload-control { display: grid; gap: 7px; min-width: 0; }
+  .evidence-file-actions { display: flex; align-items: center; gap: 10px; min-width: 0; }
+  .evidence-file-pick { display: inline-flex; align-items: center; justify-content: flex-start; gap: 8px; min-height: 44px; padding: 8px 13px; white-space: nowrap; }
+  .evidence-file-pick .ui-icon { width: 18px; height: 18px; }
+  .evidence-file-name { min-width: 0; flex: 1; margin: 0; color: var(--text-muted-readable); font-size: 13px; overflow-wrap: anywhere; }
+  .evidence-file-name[data-selected="true"] { color: var(--text-main); }
+  .evidence-file-clear { flex: 0 0 auto; min-height: 36px; }
+  .evidence-file-error { margin: 0; color: var(--status-error-text); font-size: 13px; }
+  @media (max-width: 420px) {
+    .evidence-file-actions { flex-wrap: wrap; }
+    .evidence-file-name { flex-basis: 100%; }
+  }
+</style>
 
 <script>
   import { fetchWithAuth } from "../lib/api";
@@ -160,12 +186,52 @@ import AppearanceControl from "./AppearanceControl.astro";
   const timeInput = $("tx-input-time") as HTMLInputElement | null;
   const noteInput = $("tx-input-note") as HTMLTextAreaElement | null;
   const evidenceFileInput = $("tx-input-evidence-file") as HTMLInputElement | null;
+  const evidenceFilePick = $("tx-evidence-file-pick") as HTMLButtonElement | null;
+  const evidenceFilePickLabel = $("tx-evidence-file-pick-label");
+  const evidenceFileName = $("tx-evidence-file-name");
+  const evidenceFileClear = $("tx-evidence-file-clear") as HTMLButtonElement | null;
+  const evidenceFileError = $("tx-evidence-file-error");
   const evidenceUrlInput = $("tx-input-evidence-url") as HTMLInputElement | null;
   const errorBox = $("tx-form-error");
   const submitBtn = $("btn-submit-tx") as HTMLButtonElement | null;
   const closeBtn = $("btn-close-tx") as HTMLButtonElement | null;
   const liveTotalEl = $("tx-live-total");
   const liveBreakdownEl = $("tx-live-breakdown");
+  const maxEvidenceBytes = 12 * 1024 * 1024;
+  const allowedEvidenceTypes = new Map([
+    ["image/jpeg", "JPG"], ["image/png", "PNG"], ["image/webp", "WebP"], ["application/pdf", "PDF"],
+  ]);
+
+  const resetEvidencePresentation = () => {
+    if (evidenceFileName) { evidenceFileName.textContent = "Belum ada file dipilih"; evidenceFileName.title = ""; evidenceFileName.dataset.selected = "false"; }
+    if (evidenceFilePickLabel) evidenceFilePickLabel.textContent = "Pilih file";
+    if (evidenceFileClear) evidenceFileClear.hidden = true;
+    if (evidenceFileError) { evidenceFileError.textContent = ""; evidenceFileError.hidden = true; }
+  };
+  const rejectEvidenceFile = (message: string) => {
+    if (evidenceFileInput) evidenceFileInput.value = "";
+    resetEvidencePresentation();
+    if (evidenceFileError) { evidenceFileError.textContent = message; evidenceFileError.hidden = false; }
+  };
+  const updateEvidenceFilePresentation = () => {
+    const file = evidenceFileInput?.files?.[0];
+    if (!file) { resetEvidencePresentation(); return; }
+    const typeLabel = allowedEvidenceTypes.get(file.type);
+    if (!typeLabel) { rejectEvidenceFile("Jenis file tidak didukung. Pilih JPG, PNG, WebP, atau PDF."); return; }
+    if (file.size > maxEvidenceBytes) { rejectEvidenceFile("Ukuran file melebihi 12 MiB."); return; }
+    const sizeLabel = file.size >= 1024 * 1024 ? `${(file.size / (1024 * 1024)).toFixed(1)} MiB` : `${Math.max(1, Math.round(file.size / 1024))} KiB`;
+    if (evidenceFileName) { evidenceFileName.textContent = `${file.name} · ${typeLabel} · ${sizeLabel}`; evidenceFileName.title = file.name; evidenceFileName.dataset.selected = "true"; }
+    if (evidenceFilePickLabel) evidenceFilePickLabel.textContent = "Ganti file";
+    if (evidenceFileClear) evidenceFileClear.hidden = false;
+    if (evidenceFileError) { evidenceFileError.textContent = ""; evidenceFileError.hidden = true; }
+  };
+  evidenceFilePick?.addEventListener("click", () => evidenceFileInput?.click());
+  evidenceFileInput?.addEventListener("change", updateEvidenceFilePresentation);
+  evidenceFileClear?.addEventListener("click", () => {
+    if (evidenceFileInput) evidenceFileInput.value = "";
+    updateEvidenceFilePresentation();
+    evidenceFilePick?.focus();
+  });
 
   let currency = 'IDR';
   let fx: FxReference = { rate: null, date: null, provider: null };
@@ -272,6 +338,7 @@ import AppearanceControl from "./AppearanceControl.astro";
     }
 
     if (evidenceFileInput) evidenceFileInput.value = "";
+    updateEvidenceFilePresentation();
     if (evidenceUrlInput) evidenceUrlInput.value = "";
     updateLiveTotal();
     dialog.showModal();

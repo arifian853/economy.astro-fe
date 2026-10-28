@@ -10,7 +10,8 @@ const date = '2026-10-27T10:00:00Z';
 const event = { id: eventId, name: 'Weekend bersama', eventDate: '2026-10-27', budget: 2000000, cashBudget: 500000, digitalBudget: 1500000, status: 'active', notes: null, createdAt: date, updatedAt: date, completedAt: null };
 const transactions = [{ id: txId, eventId, name: 'Makan siang bersama', quantity: 2, unitPrice: 35000, paymentMethod: 'qris', transactionAt: date, note: 'Nota tersimpan privat' }];
 const summary = { budget: 2000000, cashBudget: 500000, digitalBudget: 1500000, totalExpenses: 70000, cashExpenses: 0, digitalExpenses: 70000, totalRemaining: 1930000, cashRemaining: 500000, digitalRemaining: 1430000 };
-const publicPayload = { event: { name: event.name, eventDate: event.eventDate, status: 'active', updatedAt: date }, budgetSummary: summary, entries: [{ type: 'expense', name: transactions[0].name, amount: 70000, source: 'digital', transactionAt: date }] };
+const publicParticipants = ['Ayu', 'Bima', 'Citra', 'Daffa', 'Eka', 'Fauzan dengan nama panjang untuk diuji pada layar kecil', 'Gita', 'Hana'];
+const publicPayload = { event: { name: event.name, eventDate: event.eventDate, status: 'active', updatedAt: date }, participants: publicParticipants, budgetSummary: summary, entries: [{ type: 'expense', name: transactions[0].name, amount: 70000, source: 'digital', transactionAt: date }] };
 
 type MockState = { completed?: boolean; empty?: boolean; failPublic?: boolean; publicRequests: number; writes: { path: string; body: any }[]; errors: string[]; requests: { path: string; headers: Record<string, string> }[] };
 async function setup(page: Page, owner = true) {
@@ -73,6 +74,16 @@ for (const width of [320, 360, 390, 430, 768, 1024, 1280, 1440]) {
     await page.goto(`${origin}/event/${eventId}`);
     await expect(page.locator('#summary-remaining')).toHaveText('Rp1.930.000');
     await expect(page.locator('#btn-add-transaction')).toBeVisible();
+    if (width === 320) {
+      const headerBounds = await page.locator('.site-header-inner').evaluate(el => el.getBoundingClientRect().toJSON());
+      const appearanceBounds = await page.locator('#header-appearance > summary').evaluate(el => el.getBoundingClientRect().toJSON());
+      expect(appearanceBounds.left).toBeGreaterThanOrEqual(headerBounds.left - 1);
+      expect(appearanceBounds.right).toBeLessThanOrEqual(headerBounds.right + 1);
+      await expect(page.locator('.appearance-trigger-label')).toBeHidden();
+      await expect(page.locator('#btn-logout')).toBeVisible();
+    } else if (width === 360) {
+      await expect(page.locator('.appearance-trigger-label')).toBeVisible();
+    }
     await noOverflow(page);
     if ([390, 1440].includes(width)) await page.screenshot({ path: `artifacts/event-${width}.png`, fullPage: true });
     await page.locator('#btn-add-transaction').click();
@@ -84,6 +95,23 @@ for (const width of [320, 360, 390, 430, 768, 1024, 1280, 1440]) {
     await page.locator('#btn-close-tx').click();
     await page.goto(`${origin}/share/#${'a'.repeat(64)}`);
     await expect(page.locator('#public-total-remaining')).toHaveText('Rp1.930.000');
+    const participantNames = page.locator('.public-participant-chip');
+    await expect(participantNames).toHaveCount(publicParticipants.length);
+    expect(await participantNames.allTextContents()).toEqual(publicParticipants);
+    await expect(page.locator('#public-participant-toggle')).toHaveCount(0);
+    const badge = await participantNames.first().evaluate(el => {
+      const style = getComputedStyle(el);
+      return { display: style.display, background: style.backgroundColor, radius: style.borderRadius,
+        borders: [style.borderTopWidth, style.borderRightWidth, style.borderBottomWidth, style.borderLeftWidth] };
+    });
+    expect(badge.display).toBe('inline-flex');
+    expect(badge.background).not.toBe('rgba(0, 0, 0, 0)');
+    expect(badge.radius).toBe('9999px');
+    expect(badge.borders).toEqual(['1px', '1px', '1px', '1px']);
+    const contentWidth = await page.locator('#public-content').evaluate(el => el.getBoundingClientRect().width);
+    const participantsWidth = await page.locator('#public-participants').evaluate(el => el.getBoundingClientRect().width);
+    expect(participantsWidth).toBeGreaterThan(260);
+    expect(participantsWidth).toBeGreaterThanOrEqual(contentWidth - 1);
     await noOverflow(page);
     if ([390, 1440].includes(width)) await page.screenshot({ path: `artifacts/public-${width}.png`, fullPage: true });
     expect(state.errors).toEqual([]);
@@ -110,6 +138,18 @@ for (const mood of ['teal', 'forest', 'beige', 'slate', 'lavender', 'rosewood', 
     await page.locator('#btn-add-transaction').click();
     await page.locator('#btn-close-tx').click();
     await expect(page.locator('#btn-add-transaction')).toBeFocused();
+    await page.goto(`${origin}/share/#${'a'.repeat(64)}`);
+    await expect(page.locator('#public-participants')).toBeVisible();
+    await expect(page.locator('.public-participant-chip')).toHaveCount(publicParticipants.length);
+    await expect(page.locator('#public-participant-toggle')).toHaveCount(0);
+    const badgeColors = await page.locator('.public-participant-chip').first().evaluate(el => {
+      const probe = document.createElement('span'); probe.style.color = 'var(--text-main)'; probe.style.backgroundColor = 'var(--bg-surface)'; document.body.append(probe);
+      const expected = { color: getComputedStyle(probe).color, background: getComputedStyle(probe).backgroundColor }; probe.remove();
+      const actual = getComputedStyle(el); return { color: actual.color, background: actual.backgroundColor, expected };
+    });
+    expect(badgeColors.color).toBe(badgeColors.expected.color);
+    expect(badgeColors.background).toBe(badgeColors.expected.background);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   });
 }
 test('synthetic login, Teal first paint and unavailable storage', async ({ page }) => {
@@ -189,3 +229,110 @@ for (const width of [320, 360, 390, 430, 768, 1024, 1280, 1440]) {
   if (width === 1440) await page.screenshot({ path: 'artifacts/gate-desktop.png', fullPage: true });
  });
 }
+
+test('date-range selection has visible endpoints, a distinct in-range state, and an updated summary', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 900 });
+  await setup(page);
+  await page.goto(`${origin}/`);
+  await page.locator('#btn-new-event').click();
+  const trigger = page.locator('#event-date-range-trigger');
+  const currentSummary = await trigger.locator('.range-value').innerText();
+  await trigger.click();
+  await expect(page.locator('.calendar-status')).toContainText(`Rentang terpilih: ${currentSummary}`);
+  const grid = page.locator('.range-picker .calendar-grid');
+  const initial = grid.locator('.day[aria-selected="true"]');
+  await expect(initial).toHaveCount(1);
+  const initialStyle = await initial.evaluate(el => ({ background: getComputedStyle(el).backgroundColor, color: getComputedStyle(el).color,
+    selected: el.getAttribute('aria-selected') }));
+  const primaryStyle = await page.evaluate(() => {
+    const probe = document.createElement('span'); probe.style.backgroundColor = 'var(--primary)'; probe.style.color = 'var(--on-primary)'; document.body.append(probe);
+    const result = { background: getComputedStyle(probe).backgroundColor, color: getComputedStyle(probe).color }; probe.remove(); return result;
+  });
+  expect(initialStyle.selected).toBe('true');
+  expect(initialStyle.background).toBe(primaryStyle.background);
+  expect(initialStyle.color).toBe(primaryStyle.color);
+  await initial.focus();
+  const beforeArrow = await initial.getAttribute('data-date');
+  await page.keyboard.press('ArrowRight');
+  const afterArrow = await page.evaluate(() => document.activeElement?.getAttribute('data-date'));
+  expect(afterArrow).not.toBe(beforeArrow);
+  await page.keyboard.press('Enter');
+  await expect(page.locator('.calendar-status')).toContainText('Pilih tanggal selesai');
+  await page.locator('.range-dialog .cancel').click();
+  await trigger.click();
+
+  const days = grid.locator('.day');
+  const start = days.nth(4);
+  const end = days.nth(7);
+  await start.click();
+  await expect(page.locator('.calendar-status')).toContainText('Pilih tanggal selesai');
+  await end.click();
+  const startState = grid.locator('.day[data-range-start="true"]');
+  const endState = grid.locator('.day[data-range-end="true"]');
+  const inRange = grid.locator('.day[data-in-range="true"][aria-selected="false"]').first();
+  await expect(startState).toHaveAttribute('aria-selected', 'true');
+  await expect(endState).toHaveAttribute('aria-selected', 'true');
+  await expect(inRange).toBeVisible();
+  const rangeStyles = await Promise.all([startState, endState, inRange].map(el => el.evaluate(node => ({
+    background: getComputedStyle(node).backgroundColor, radius: getComputedStyle(node).borderRadius,
+    color: getComputedStyle(node).color,
+  }))));
+  expect(rangeStyles[0].background).toBe(primaryStyle.background);
+  expect(rangeStyles[1].background).toBe(primaryStyle.background);
+  expect(rangeStyles[0].radius).not.toBe(rangeStyles[1].radius);
+  expect(rangeStyles[2].background).not.toBe(primaryStyle.background);
+
+  for (const mood of ['rosewood', 'graphite', 'sky-night']) {
+    await page.locator('html').evaluate((el, value) => el.setAttribute('data-mood', String(value)), mood);
+    const colors = await startState.evaluate(el => {
+      const probe = document.createElement('span'); probe.style.color = 'var(--on-primary)'; document.body.append(probe);
+      const expected = getComputedStyle(probe).color; probe.remove();
+      return { actual: getComputedStyle(el).color, expected };
+    });
+    expect(colors.actual).toBe(colors.expected);
+  }
+  await page.locator('html').evaluate(el => el.setAttribute('data-mood', 'teal'));
+
+  await page.locator('.range-dialog .confirm').click();
+  await expect(trigger.locator('.range-value')).not.toHaveText('Pilih tanggal');
+  await expect(trigger.locator('.range-value')).toContainText('5');
+  await expect(trigger.locator('.range-value')).toContainText('8');
+
+  await trigger.click();
+  const fifth = grid.locator('.day[data-date$="-05"]');
+  await fifth.click(); await fifth.click();
+  await expect(fifth).toHaveAttribute('data-range-start', 'true');
+  await expect(fifth).toHaveAttribute('data-range-end', 'true');
+  expect(await fifth.evaluate(el => getComputedStyle(el).borderRadius)).toBe('9999px');
+  await page.locator('.range-dialog .confirm').click();
+  await expect(trigger.locator('.range-value')).not.toHaveText('Pilih tanggal');
+});
+
+test('evidence picker is custom, accessible, clearable, and validates type and 12 MiB size', async ({ page }) => {
+  const state = await setup(page);
+  await page.goto(`${origin}/event/${eventId}`);
+  await page.locator('#btn-add-transaction').click();
+  await page.locator('.tx-evidence-details summary').click();
+  const input = page.locator('#tx-input-evidence-file');
+  const pick = page.getByRole('button', { name: 'Pilih file bukti' });
+  const status = page.locator('#tx-evidence-file-name');
+  const clear = page.locator('#tx-evidence-file-clear');
+  const error = page.locator('#tx-evidence-file-error');
+  await expect(input).toBeHidden();
+  await expect(pick).toBeVisible();
+  await expect(status).toHaveText('Belum ada file dipilih');
+  await input.setInputFiles({ name: 'nota-makan.jpg', mimeType: 'image/jpeg', buffer: Buffer.from([0xff, 0xd8, 0xff, 0x00]) });
+  await expect(status).toContainText('nota-makan.jpg');
+  await expect(clear).toBeVisible();
+  await clear.click();
+  await expect(status).toHaveText('Belum ada file dipilih');
+  await expect(clear).toBeHidden();
+
+  await input.setInputFiles({ name: 'catatan.txt', mimeType: 'text/plain', buffer: Buffer.from('bukan bukti gambar') });
+  await expect(error).toContainText('Jenis file tidak didukung');
+  await expect(input).toHaveValue('');
+  await input.setInputFiles({ name: 'terlalu-besar.jpg', mimeType: 'image/jpeg', buffer: Buffer.alloc(12 * 1024 * 1024 + 1) });
+  await expect(error).toContainText('12 MiB');
+  await expect(input).toHaveValue('');
+  expect(state.writes).toEqual([]);
+});

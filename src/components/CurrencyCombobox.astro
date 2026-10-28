@@ -40,14 +40,14 @@ const { id, label = 'Mata uang utama' } = Astro.props;
   .currency-search { width: 100%; min-height: 48px; padding: 10px 12px; border: 1px solid var(--border-subtle); border-radius: var(--radius-sm); background: var(--bg-surface); color: var(--text-main); font: inherit; }
   .currency-search:focus-visible { outline: 2px solid var(--border-active); outline-offset: 2px; }
   .currency-list { display: grid; gap: 3px; min-height: 44px; max-height: min(20rem, 55vh); overflow-y: auto; overscroll-behavior: contain; }
-  .currency-option { display: flex; align-items: center; gap: 11px; min-width: 0; min-height: 46px; padding: 6px 11px; border: 1px solid transparent; border-radius: var(--radius-sm); color: var(--text-main); cursor: pointer; }
-  .currency-option[data-active="true"], .currency-option:hover { background: var(--bg-surface-hover); }
-  .currency-option[data-selected="true"] { border-color: var(--border-subtle); background: var(--bg-surface-variant); }
-  .currency-option-code { flex: 0 0 42px; font: 600 12px var(--font-mono); }
-  .currency-option-name { min-width: 0; flex: 1; overflow-wrap: anywhere; font-size: 14px; }
-  .currency-option-check { display: grid; place-items: center; width: 20px; height: 20px; flex: 0 0 20px; color: var(--primary); opacity: 0; transform: scale(.8); transition: opacity var(--motion-fast, 150ms) ease, transform var(--motion-fast, 150ms) var(--ease-out-soft, ease); }
-  .currency-option-check svg { width: 17px; height: 17px; }
-  .currency-option[data-selected="true"] .currency-option-check { opacity: 1; transform: scale(1); }
+  .currency-list :global(.currency-option) { display: flex; align-items: center; gap: 11px; min-width: 0; min-height: 46px; padding: 6px 11px; border: 1px solid transparent; border-radius: var(--radius-sm); color: var(--text-main); cursor: pointer; }
+  .currency-list :global(.currency-option[data-active="true"]), .currency-list :global(.currency-option:hover) { background: var(--bg-surface-hover); }
+  .currency-list :global(.currency-option[data-selected="true"]) { border-color: var(--border-subtle); background: var(--bg-surface-variant); }
+  .currency-list :global(.currency-option-code) { flex: 0 0 42px; font: 600 12px var(--font-mono); }
+  .currency-list :global(.currency-option-name) { min-width: 0; flex: 1; overflow-wrap: anywhere; font-size: 14px; }
+  .currency-list :global(.currency-option-check) { display: grid; place-items: center; width: 20px; height: 20px; flex: 0 0 20px; color: var(--primary); opacity: 0; transform: scale(.8); transition: opacity var(--motion-fast, 150ms) ease, transform var(--motion-fast, 150ms) var(--ease-out-soft, ease); }
+  .currency-list :global(.currency-option-check svg) { display: block; width: 17px; height: 17px; }
+  .currency-list :global(.currency-option[data-selected="true"] .currency-option-check) { opacity: 1; transform: scale(1); }
   .currency-empty { margin: 0; padding: 12px 8px; color: var(--text-muted-readable); font-size: 13px; }
   @keyframes currency-pop-in { from { opacity: 0; transform: translateY(-4px) scale(.985); } to { opacity: 1; transform: translateY(0) scale(1); } }
   @media (max-width: 600px) {
@@ -103,6 +103,7 @@ const { id, label = 'Mata uang utama' } = Astro.props;
         row.className = 'currency-option';
         row.setAttribute('role', 'option');
         row.setAttribute('aria-selected', String(option.code === value));
+        row.setAttribute('aria-label', `${option.code} · ${option.name} (${option.symbol})`);
         row.dataset.selected = String(option.code === value);
         row.dataset.active = 'false';
         row.dataset.code = option.code;

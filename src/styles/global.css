@@ -750,6 +750,9 @@ progress::-moz-progress-bar { background: var(--primary); }
   .tx-form-card, .event-form-card { padding-bottom: calc(24px + env(safe-area-inset-bottom)); }
   .modal-actions { position: sticky; bottom: 0; background: var(--bg-surface); padding-bottom: 8px; }
 }
+@media (max-width: 359px) {
+  .appearance-trigger-label { display: none; }
+}
 .dashboard-stack[data-status="completed"] .primary-expense-action { display: none; }
 .budget-channel-line strong { min-width: 0; overflow-wrap: anywhere; }
 #page-content:focus { outline: none; }

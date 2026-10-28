@@ -14,6 +14,9 @@ const currencies = [
   { code: 'USD', name: 'US Dollar', symbol: 'US$', minorUnits: 2 },
   { code: 'JPY', name: 'Japanese Yen', symbol: '¥', minorUnits: 0 },
   { code: 'KWD', name: 'Kuwaiti Dinar', symbol: 'KWD', minorUnits: 3 },
+  { code: 'AED', name: 'United Arab Emirates Dirham', symbol: 'د.إ', minorUnits: 2 },
+  { code: 'AMD', name: 'Armenian Dram', symbol: '֏', minorUnits: 2 },
+  { code: 'MYR', name: 'Malaysian Ringgit', symbol: 'RM', minorUnits: 2 },
 ];
 async function fixture(page: Page, options: { currency?: string; empty?: boolean; cash?: null; completed?: boolean; offline?: boolean; registryOffline?: boolean; large?: boolean; locked?: boolean; snapshot?: 'known' | 'unknown' } = {}) {
   const currency = options.currency ?? 'SGD';
@@ -96,6 +99,12 @@ async function fixture(page: Page, options: { currency?: string; empty?: boolean
 async function eventPage(page: Page) { await page.goto(`${origin}/event/${id}`); await expect(page.locator('#dashboard-content')).toBeVisible(); }
 async function openEdit(page: Page) { await page.locator('#financial-inspector > details').last().locator('summary').click(); await page.locator('#btn-edit-event').click(); await expect(page.locator('#btn-submit-event')).toBeEnabled(); }
 async function openChannels(page: Page) { await page.locator('#financial-inspector > details').first().locator('summary').first().click(); }
+async function setCurrencyMode(page: Page, mode: 'domestic' | 'international') { await page.locator(`[data-currency-mode="${mode}"]`).click(); }
+async function chooseCurrency(page: Page, code: string) {
+  await page.locator('#event-currency-combobox-trigger').click();
+  await page.locator('#event-currency-combobox-currency-input').fill(code);
+  await page.locator(`.currency-option[data-code="${code}"]`).click();
+}
 
 test('ordinary owner detail refreshes reuse the same budget history read', async ({ page }) => {
   const state = await fixture(page); await eventPage(page);
@@ -139,9 +148,8 @@ for (const [code, amount, expected] of [['SGD', '1,25', '1.25'], ['USD', '1,25',
     await expect(page.locator('html')).toHaveAttribute('data-mood', 'teal');
     await expect.poll(() => state.requests.some(r => r.path === '/api/fx/currencies')).toBe(true);
     await expect(page.locator('#event-currency-state')).toContainText('dapat diubah');
-    await page.locator('#event-currency-mode').selectOption('international');
-    await page.locator('#event-currency-search').fill(code);
-    await page.locator('#event-base-currency').selectOption(code);
+    await setCurrencyMode(page, 'international');
+    await chooseCurrency(page, code);
     await page.locator('#event-input-name').fill('Perjalanan'); await page.locator('#event-input-budget').fill(amount); await page.locator('#event-input-participants').fill('Ayu, Bima');
     await page.locator('#btn-submit-event').click(); await expect(page.locator('#event-form-dialog')).not.toBeVisible();
     expect(state.writes.at(-1)?.body).toMatchObject({ currencyMode: 'international', baseCurrency: code, budget: expected });
@@ -156,7 +164,7 @@ test('offline registry preserves Domestic IDR creation without invented fallback
   await page.locator('#btn-submit-event').click(); await expect(page.locator('#event-form-dialog')).not.toBeVisible();
   expect(state.writes.at(-1)?.body).toMatchObject({ currencyMode: 'domestic', baseCurrency: 'IDR', budget: '1250000' });
   await page.locator('#btn-new-event').click(); await expect(page.locator('#event-currency-retry')).toBeVisible();
-  await page.locator('#event-currency-mode').selectOption('international'); await expect(page.locator('#event-base-currency')).toBeDisabled(); await expect(page.locator('#event-base-currency option')).toHaveCount(0);
+  await setCurrencyMode(page, 'international'); await expect(page.locator('#event-currency-combobox-trigger')).toBeDisabled(); await expect(page.locator('.currency-option')).toHaveCount(0);
 });
 for (const width of [320, 390, 1440]) {
   test(`international ledger and bidirectional converter at ${width}px`, async ({ page }) => {
@@ -178,8 +186,8 @@ for (const width of [320, 390, 1440]) {
 }
 test('pre-transaction currency change requires explicit budget/allocation acknowledgment', async ({ page }) => {
   const state = await fixture(page, { empty: true }); await eventPage(page); await openEdit(page);
-  await expect(page.locator('#event-base-currency')).toBeEnabled();
-  await page.locator('#event-base-currency').selectOption('USD');
+  await expect(page.locator('#event-currency-combobox-trigger')).toBeEnabled();
+  await chooseCurrency(page, 'USD');
   await expect(page.locator('#currency-change-notice')).toContainText('S$100,01 menjadi US$100,01');
   await page.locator('#btn-submit-event').click(); await expect(page.locator('#event-form-error')).toContainText('Setujui'); expect(state.writes).toHaveLength(0);
   await page.locator('#currency-change-ack').check(); await page.locator('#btn-submit-event').click();
@@ -188,18 +196,18 @@ test('pre-transaction currency change requires explicit budget/allocation acknow
 });
 test('unrepresentable yen currency change is rejected before a write', async ({ page }) => {
   const state = await fixture(page, { empty: true }); await eventPage(page); await openEdit(page);
-  await page.locator('#event-base-currency').selectOption('JPY'); await page.locator('#currency-change-ack').check(); await page.locator('#btn-submit-event').click();
+  await chooseCurrency(page, 'JPY'); await page.locator('#currency-change-ack').check(); await page.locator('#btn-submit-event').click();
   await expect(page.locator('#event-form-error')).toContainText('tidak sesuai pecahan'); expect(state.writes).toHaveLength(0);
 });
 test('currency is locked persistently even with no remaining transactions', async ({ page }) => {
   await fixture(page, { empty: true, locked: true }); await eventPage(page); await openEdit(page);
-  await expect(page.locator('#event-base-currency')).toBeDisabled(); await expect(page.locator('#event-currency-mode')).toBeDisabled(); await expect(page.locator('#event-currency-state')).toContainText('terkunci');
+  await expect(page.locator('#event-currency-combobox-trigger')).toBeDisabled(); await expect(page.locator('[data-currency-mode="international"]')).toBeDisabled(); await expect(page.locator('#event-currency-state')).toContainText('terkunci');
 });
 test('server currency conflict is visible and keeps entered form data', async ({ page }) => {
   const state = await fixture(page, { empty: true }); await eventPage(page); await openEdit(page);
-  await page.locator('#event-base-currency').selectOption('USD'); await page.locator('#currency-change-ack').check(); state.conflict = true;
+  await chooseCurrency(page, 'USD'); await page.locator('#currency-change-ack').check(); state.conflict = true;
   await page.locator('#btn-submit-event').click(); await expect(page.locator('#event-form-error')).toContainText('Mata uang terkunci');
-  await expect(page.locator('#event-form-dialog')).toBeVisible(); await expect(page.locator('#event-input-name')).toHaveValue('Singapore bersama'); await expect(page.locator('#event-base-currency')).toBeDisabled();
+  await expect(page.locator('#event-form-dialog')).toBeVisible(); await expect(page.locator('#event-input-name')).toHaveValue('Singapore bersama'); await expect(page.locator('#event-currency-combobox-trigger')).toBeDisabled();
 });
 test('exact fractional expense and edit retain snapshot; first expense locks currency', async ({ page }) => {
   const state = await fixture(page, { empty: true }); await eventPage(page);
@@ -306,3 +314,75 @@ for (const snapshot of ['known', 'unknown', undefined] as const) {
     });
   }
 }
+
+test('currency options keep spaced labels and a compact selected mark in light and dark moods', async ({ page }) => {
+  const state = await fixture(page, { currency: 'IDR', empty: true });
+  await page.goto(`${origin}/`);
+  await page.locator('#btn-new-event').click();
+  await expect.poll(() => state.requests.some(r => r.path === '/api/fx/currencies')).toBe(true);
+  await setCurrencyMode(page, 'international');
+  const trigger = page.locator('#event-currency-combobox-trigger');
+  await trigger.click();
+  const selected = page.locator('.currency-option[data-code="IDR"]');
+  await expect(selected).toBeVisible();
+  const metrics = await selected.evaluate(row => {
+    const code = row.querySelector('.currency-option-code')!.getBoundingClientRect();
+    const name = row.querySelector('.currency-option-name')!.getBoundingClientRect();
+    const check = getComputedStyle(row.querySelector('.currency-option-check svg')!);
+    return { display: getComputedStyle(row).display, gap: getComputedStyle(row).gap,
+      labelGap: name.left - code.right, checkWidth: check.width, checkHeight: check.height,
+      selected: row.getAttribute('aria-selected'), ariaLabel: row.getAttribute('aria-label') };
+  });
+  expect(metrics.display).toBe('flex');
+  expect(metrics.gap).toBe('11px');
+  expect(metrics.labelGap).toBeGreaterThanOrEqual(10);
+  expect(metrics.checkWidth).toBe('17px');
+  expect(metrics.checkHeight).toBe('17px');
+  expect(metrics.selected).toBe('true');
+  expect(metrics.ariaLabel).toBe('IDR · Indonesian Rupiah (Rp)');
+
+  const search = page.locator('#event-currency-combobox-currency-input');
+  await search.fill('AED');
+  await page.keyboard.press('ArrowDown');
+  await page.keyboard.press('ArrowDown');
+  const active = page.locator('.currency-option[data-active="true"]');
+  await expect(active).toHaveAttribute('data-code', 'AED');
+  expect(await search.getAttribute('aria-activedescendant')).toBe(await active.getAttribute('id'));
+  const activeBackground = await active.evaluate(el => {
+    const probe = document.createElement('span'); probe.style.backgroundColor = 'var(--bg-surface-hover)'; document.body.append(probe);
+    const expected = getComputedStyle(probe).backgroundColor; probe.remove(); return { actual: getComputedStyle(el).backgroundColor, expected };
+  });
+  expect(activeBackground.actual).toBe(activeBackground.expected);
+  await page.keyboard.press('Enter');
+  await expect(trigger).toContainText('AED · United Arab Emirates Dirham');
+  await trigger.click();
+
+  for (const [code, label] of [
+    ['SGD', 'SGD · Singapore Dollar (S$)'],
+    ['AED', 'AED · United Arab Emirates Dirham (د.إ)'],
+    ['AMD', 'AMD · Armenian Dram (֏)'],
+    ['JPY', 'JPY · Japanese Yen (¥)'],
+    ['MYR', 'MYR · Malaysian Ringgit (RM)'],
+  ]) {
+    await page.locator('#event-currency-combobox-currency-input').fill(code);
+    const row = page.locator(`.currency-option[data-code="${code}"]`);
+    await expect(row).toBeVisible();
+    await expect(row).toHaveAttribute('aria-label', label);
+  }
+
+  for (const mood of ['graphite', 'sky-night']) {
+    await page.locator('html').evaluate((el, value) => el.setAttribute('data-mood', String(value)), mood);
+    await page.locator('#event-currency-combobox-currency-input').fill('AED');
+    const selectedRow = page.locator('.currency-option[data-selected="true"]');
+    await expect(selectedRow).toBeVisible();
+    const colors = await selectedRow.evaluate(el => {
+      const probe = document.createElement('span'); probe.style.color = 'var(--primary)'; document.body.append(probe);
+      const primary = getComputedStyle(probe).color; probe.remove();
+      return { color: getComputedStyle(el).color, body: getComputedStyle(document.body).color,
+        background: getComputedStyle(el).backgroundColor, check: getComputedStyle(el.querySelector('.currency-option-check')!).color, primary };
+    });
+    expect(colors.color).toBe(colors.body);
+    expect(colors.background).not.toBe('rgba(0, 0, 0, 0)');
+    expect(colors.check).toBe(colors.primary);
+  }
+});

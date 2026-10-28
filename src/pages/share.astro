@@ -97,7 +97,6 @@ import Layout from "../layouts/Layout.astro";
             <p class="public-page-kicker">Bersama</p>
             <h2 id="public-participants-title">Peserta · <span id="public-participant-count">0</span></h2>
           </div>
-          <button id="public-participant-toggle" class="btn btn-ghost btn-sm" type="button" aria-expanded="false" hidden></button>
         </div>
         <ul id="public-participant-list" class="public-participant-list"></ul>
       </section>
@@ -169,37 +168,20 @@ import Layout from "../layouts/Layout.astro";
 
     const rows = new Map<string, HTMLLIElement>();
     let renderedOnce = false;
-    let participantsExpanded = false;
     const renderParticipants = (participants: string[]) => {
       const section = document.getElementById('public-participants');
       const list = document.getElementById('public-participant-list');
       const count = document.getElementById('public-participant-count');
-      const toggle = document.getElementById('public-participant-toggle') as HTMLButtonElement | null;
-      if (!section || !list || !count || !toggle) return;
+      if (!section || !list || !count) return;
       section.hidden = participants.length === 0;
       count.textContent = String(participants.length);
-      participantsExpanded = false;
-      list.replaceChildren(...participants.map((name, index) => {
+      list.replaceChildren(...participants.map(name => {
         const item = document.createElement('li');
         item.className = 'public-participant-chip';
         item.textContent = name;
-        if (index >= 3) item.hidden = true;
-        item.dataset.participantOverflow = String(index >= 3);
         return item;
       }));
-      const more = participants.length - 3;
-      toggle.hidden = more <= 0;
-      toggle.textContent = `+${more} lainnya`;
-      toggle.setAttribute('aria-expanded', 'false');
     };
-    document.getElementById('public-participant-toggle')?.addEventListener('click', event => {
-      const button = event.currentTarget as HTMLButtonElement;
-      participantsExpanded = !participantsExpanded;
-      document.querySelectorAll<HTMLElement>('[data-participant-overflow="true"]').forEach(item => { item.hidden = !participantsExpanded; });
-      button.setAttribute('aria-expanded', String(participantsExpanded));
-      const hiddenCount = document.querySelectorAll('[data-participant-overflow="true"]').length;
-      button.textContent = participantsExpanded ? 'Tampilkan lebih sedikit' : `+${hiddenCount} lainnya`;
-    });
     const renderEntries = (entries: NonNullable<ReturnType<typeof normalizePublicEvent>>["entries"]) => {
       if (!entryList || !entryCount || !entryCountList || !emptyState || !ledger) return;
       const ordered: HTMLLIElement[] = [];
@@ -457,9 +439,12 @@ import Layout from "../layouts/Layout.astro";
     .public-entry-amount { grid-column: 2; text-align: start; white-space: normal; overflow-wrap: anywhere; }
     .public-channel-card dd { overflow-wrap: anywhere; min-width: 0; font-family: var(--font-body); font-variant-numeric: tabular-nums; }
     .ledger-new-entry { animation: ledger-enter 260ms ease-out; }
-    @keyframes ledger-enter { from { opacity: 0; transform: translateY(6px); background: var(--primary-container); } to { opacity: 1; transform: translateY(0); } }
+    @keyframes ledger-enter { from { opacity: 0; transform: translateY(6px); background: var(--primary-container); } to { opacity: 1; transform: translateY(0); background: transparent; } }
+    .public-ledger-section { grid-column: 1; grid-row: 4; }
+    .public-channel-section { grid-column: 2; grid-row: 4; }
     @media (max-width: 760px) {
       #public-content { grid-template-columns: minmax(0, 1fr); }
+      .public-participants-section { grid-template-columns: minmax(0, 1fr); gap: 9px; padding: 14px 16px; }
       .public-ledger-section { grid-column: 1; grid-row: 4; }
       .public-channel-section { grid-column: 1; grid-row: 5; }
       .public-participants-section { grid-column: 1; grid-row: 3; }
@@ -468,7 +453,7 @@ import Layout from "../layouts/Layout.astro";
     @media (max-width: 430px) {
       .public-financial-support { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px 10px; }
       .public-financial-stat:first-child:nth-last-child(3) { grid-column: 1 / -1; }
-      .public-participant-chip { max-width: 100%; overflow-wrap: anywhere; }
+      .public-participant-list :global(.public-participant-chip) { max-width: 100%; overflow-wrap: anywhere; }
     }
     .public-overview { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0; grid-column: 1 / -1; margin: 0; padding: 0; border: 0; border-radius: 0; background: transparent; }
     .public-financial-hero { display: grid; gap: 6px; padding: clamp(22px, 3vw, 34px); border: 1px solid var(--border-subtle); border-radius: var(--radius-lg); background: var(--primary-container); color: var(--on-primary-container); }
@@ -486,15 +471,12 @@ import Layout from "../layouts/Layout.astro";
     .public-financial-stat .public-stat-value { color: var(--text-main); font: 500 clamp(17px, 2vw, 21px)/1.3 var(--font-heading); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
     .public-financial-stat .public-stat-caption { margin: 0; color: var(--text-muted-readable); font-size: 12px; }
     .public-initial-unavailable, .public-fx-state { margin: 0 4px 10px; color: var(--text-muted-readable); font-size: 12px; }
-    .public-participants-section { grid-column: 1 / -1; grid-row: 3; display: flex; align-items: center; justify-content: space-between; gap: 18px; min-width: 0; padding: 15px 18px; border: 1px solid var(--border-subtle); border-radius: var(--radius-md); background: var(--bg-surface-variant); }
+    .public-participants-section { grid-column: 1 / -1; grid-row: 3; display: grid; grid-template-columns: minmax(0, auto) minmax(0, 1fr); align-items: start; gap: 16px; min-width: 0; padding: 15px 18px; border: 1px solid var(--border-subtle); border-radius: var(--radius-md); background: var(--bg-surface-variant); }
     .public-participants-heading { display: flex; align-items: center; justify-content: space-between; gap: 14px; min-width: 0; }
     .public-participants-heading .public-page-kicker { margin-bottom: 2px; }
     .public-participants-heading h2 { margin: 0; white-space: nowrap; font: 500 14px/1.4 var(--font-heading); }
-    .public-participant-list { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 7px; min-width: 0; margin: 0; padding: 0; list-style: none; }
-    .public-participant-chip { display: inline-flex; align-items: center; min-height: 32px; max-width: 100%; padding: 5px 11px; border: 1px solid var(--border-subtle); border-radius: var(--radius-full); background: var(--bg-surface); color: var(--text-main); font-size: 13px; overflow-wrap: anywhere; }
-    .public-participants-section #public-participant-toggle { flex: 0 0 auto; min-height: 36px; padding: 6px 10px; }
-    .public-ledger-section { grid-column: 1; grid-row: 4; }
-    .public-channel-section { grid-column: 2; grid-row: 4; }
+    .public-participant-list { display: flex; justify-content: flex-start; flex-wrap: wrap; gap: 7px; min-width: 0; margin: 0; padding: 0; list-style: none; }
+    .public-participant-list :global(.public-participant-chip) { display: inline-flex; align-items: center; min-height: 32px; max-width: 100%; padding: 5px 11px; border: 1px solid var(--border-subtle); border-radius: var(--radius-full); background: var(--bg-surface); color: var(--text-main); font-size: 13px; overflow-wrap: anywhere; }
     .public-entry-row { transition: background-color var(--motion-fast, 150ms) ease; }
     .ledger-new-entry { animation: ledger-enter var(--motion-layout, 300ms) var(--ease-out-soft, ease); }
     @keyframes ledger-enter { from { opacity: 0; transform: translateY(7px); background: var(--primary-container); } to { opacity: 1; transform: translateY(0); background: transparent; } }
