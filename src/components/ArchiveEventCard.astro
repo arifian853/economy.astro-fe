@@ -31,7 +31,7 @@
   .archive-event-card { display: grid; grid-template-columns: minmax(180px, .9fr) minmax(360px, 1.55fr) auto; align-items: center; gap: 28px; min-width: 0; padding: 22px 24px; border: 1px solid var(--border-subtle); border-radius: var(--radius-md); background: var(--bg-surface); transition: transform var(--motion-fast, 150ms) var(--ease-out-soft, ease), background-color var(--motion-control, 190ms) ease, box-shadow var(--motion-control, 190ms) ease; }
   @media (hover: hover) and (prefers-reduced-motion: no-preference) { .archive-event-card:hover { transform: translateY(-1px); background: var(--bg-surface-variant); box-shadow: var(--shadow-sm); } }
   .archive-event-identity { display: grid; gap: 6px; min-width: 0; }
-  .archive-event-title-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; min-width: 0; }
+  .archive-event-title-row { display: flex; align-items: center; justify-content: flex-start; gap: 10px; min-width: 0; }
   .archive-event-title-row .event-name { min-width: 0; font: 500 18px/1.3 var(--font-heading); overflow-wrap: anywhere; }
   .archive-event-title-row .event-status { flex: 0 0 auto; }
   .archive-event-identity .event-date, .archive-participants { margin: 0; color: var(--text-muted-readable); font-size: 13px; }

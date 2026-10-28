@@ -12,5 +12,8 @@ test('ArchiveEventCard uses a left-aligned identity, explicit totals, report lin
   expect(component).toContain('Lihat laporan');
   expect(component).toContain('aria-label="Aksi arsip"');
   expect(component).toContain('action-delete');
+  const titleRowStyles = component.match(/\.archive-event-title-row\s*\{([^}]+)\}/)?.[1] ?? '';
+  expect(titleRowStyles).toContain('justify-content: flex-start');
+  expect(titleRowStyles).not.toContain('space-between');
   expect(component).not.toContain('Anggaran akhir');
 });

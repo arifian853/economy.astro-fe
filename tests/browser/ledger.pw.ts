@@ -152,6 +152,22 @@ for (const mood of ['teal', 'forest', 'beige', 'slate', 'lavender', 'rosewood', 
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   });
 }
+test('completed archive badge stays visually attached to the event title', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await setup(page);
+  await page.goto(`${origin}/`);
+  const card = page.locator('.lifecycle-completed .archive-event-card');
+  await expect(card).toBeVisible();
+  const spacing = await card.evaluate(el => {
+    const title = el.querySelector('.archive-event-title-row .event-name')!.getBoundingClientRect();
+    const badge = el.querySelector('.archive-event-title-row .event-status')!.getBoundingClientRect();
+    return badge.left - title.right;
+  });
+  expect(spacing).toBeGreaterThanOrEqual(6);
+  expect(spacing).toBeLessThanOrEqual(12);
+  await noOverflow(page);
+});
+
 test('synthetic login, Teal first paint and unavailable storage', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 900 });
   await setup(page, false);
