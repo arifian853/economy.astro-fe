@@ -17,7 +17,7 @@ const { id } = Astro.props;
       <legend class="sr-only">Mood</legend>
       {moods.map(mood => <label class="appearance-option" for={`${id}-${mood.id}`}>
         <input id={`${id}-${mood.id}`} class="appearance-radio" type="radio" name={`${id}-mood`} value={mood.id} data-mood-radio />
-        <span class="appearance-swatch" style={`--appearance-swatch:${mood.canvas}`} aria-hidden="true"></span>
+        <span class="appearance-swatch" style={`--appearance-swatch:${mood.swatch}`} aria-hidden="true"></span>
         <span class="appearance-option-name">{mood.name}</span>
         <span class="appearance-check" aria-hidden="true"><svg viewBox="0 0 20 20" fill="none"><path d="m4 10 4 4 8-8" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
       </label>)}

@@ -119,6 +119,31 @@ for (const width of [320, 360, 390, 430, 768, 1024, 1280, 1440]) {
     expect(publicRequest.headers.authorization).toBeUndefined();
   });
 }
+test('appearance swatches match the Bookshelf mood colors', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 900 });
+  const state = await setup(page);
+  await page.goto(`${origin}/`);
+  await page.locator('#header-appearance > summary').click();
+  const swatches = await page.locator('#header-appearance .appearance-option').evaluateAll(options =>
+    options.map(option => ({
+      name: option.querySelector('.appearance-option-name')?.textContent?.trim(),
+      color: getComputedStyle(option.querySelector('.appearance-swatch')!).backgroundColor,
+    })),
+  );
+  expect(swatches).toEqual([
+    { name: 'Teal', color: 'rgb(63, 107, 103)' },
+    { name: 'Forest', color: 'rgb(73, 100, 75)' },
+    { name: 'Beige', color: 'rgb(107, 80, 64)' },
+    { name: 'Slate', color: 'rgb(77, 93, 108)' },
+    { name: 'Lavender', color: 'rgb(102, 90, 122)' },
+    { name: 'Rosewood', color: 'rgb(122, 79, 85)' },
+    { name: 'Graphite', color: 'rgb(184, 192, 200)' },
+    { name: 'Sky Night', color: 'rgb(143, 183, 255)' },
+  ]);
+  await noOverflow(page);
+  expect(state.errors).toEqual([]);
+});
+
 for (const mood of ['teal', 'forest', 'beige', 'slate', 'lavender', 'rosewood', 'graphite', 'sky-night']) {
   test(`appearance, keyboard and accessibility: ${mood}`, async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 900 });

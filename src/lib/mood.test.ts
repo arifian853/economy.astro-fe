@@ -49,6 +49,7 @@ test('all eight Economy palettes match the current Bookshelf source tokens', () 
     const block = design.split(`## ${mood.name}\n`)[1].split('```css\n')[1].split('```')[0];
     expect(moodTokens(mood.id)).toEqual(tokens(block));
     expect(mood.canvas).toBe(moodTokens(mood.id)['--bg-main']);
+    expect(mood).toHaveProperty('swatch', moodTokens(mood.id)['--primary']);
   }
   expect(css).toMatch(/:root,\s*\[data-mood="teal"\]/);
 });

@@ -11,6 +11,8 @@ test('AppearanceControl uses authored radio semantics and contains all eight moo
   expect(control).toContain('<legend class="sr-only">Mood</legend>');
   expect(control).toContain('type="radio"');
   expect(control).toContain('Escape');
+  expect(control).toContain('style={`--appearance-swatch:${mood.swatch}`}');
+  expect(control).not.toContain('style={`--appearance-swatch:${mood.canvas}`}');
   for (const mood of ['teal', 'forest', 'beige', 'slate', 'lavender', 'rosewood', 'graphite', 'sky-night']) {
     expect(moodSource).toContain(`id: '${mood}'`);
   }
